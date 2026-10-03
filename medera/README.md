@@ -1,15 +1,16 @@
 # MedEra
 
-MedEra is a C++17 hospital directory and care-request web app. Patients can search hospital-managed listings by city, locality, specialty, and reported availability; use browser location to rank nearby hospitals; request appointments; and submit a tracked emergency-coordination request. Hospital staff have a sign-in workspace for listing details, availability, and request inboxes.
-
+3. Open PowerShell in the `medera` folder (the folder that contains `build.bat`), then run `.\build.bat medera-reviews.exe`.
+4. Start the corrected build from that same folder with `.\medera-reviews.exe 8097`.
 The interface is inspired by the clear location-first search and browsing pattern in the reference website. It uses original MedEra branding and CSS-built hospital illustrations.
 
 ## Run locally on Windows
 
 1. Install MinGW-w64 UCRT64 and make `g++` available in `PATH`.
-2. Open PowerShell in the `medera` folder (the folder that contains `build.bat`), then run `.\build.bat medera-qr.exe`.
-3. Start the new build from that same folder with `.\medera-qr.exe 8092`.
-4. Open [http://127.0.0.1:8092](http://127.0.0.1:8092) in your browser. Leave the server window running.
+2. Stop any older MedEra server by pressing **Ctrl+C** in its PowerShell window.
+3. Open PowerShell in the `medera` folder (the folder that contains `build.bat`), then run `.\build.bat medera-reviews.exe`.
+4. Start the corrected build from that same folder with `.\medera-reviews.exe 8097`.
+5. Open [http://127.0.0.1:8097](http://127.0.0.1:8097) in your browser. Leave the server window running.
 
 Keep the server console open while using the app. It binds only to `127.0.0.1`; other devices cannot connect to this local build. The executable loads `public/` and stores records in `data/` beside itself, even if you launch it while PowerShell is in another folder. The `data/` directory is created when the app first runs. The directory intentionally starts empty and does not contain fictional hospitals or availability data.
 
@@ -42,10 +43,12 @@ medera/
 - See hospital-reported bed and ambulance availability, ratings, contact links, and facility directions when coordinates are listed. Each hospital profile includes its overall rating and patient comments.
 - Submit and track appointment requests; hospital staff can confirm, decline, or complete them. A completed visit can receive one rating.
 - Each submitted appointment receives a QR image that opens MedEra's tracker with its code prefilled. Patients can screenshot the confirmation or download the QR image. QR generation runs in the browser and does not send codes to an outside QR service.
-- Patients enter their appointment code in the tracking section; the review form appears after hospital staff mark the visit complete. Reviews are limited to one per completed appointment.
+- Patients enter their appointment code in the tracking section; marking a visit complete unlocks the review form but does not submit a review automatically. After submission, the tracker links directly to the published hospital profile. Reviews are limited to one per completed appointment.
 - Hospital registration and profile setup offer an explicit **Use current location** button to fill coordinates, with manual latitude/longitude fields kept available.
 - Create an emergency coordination request. The backend considers hospitals reporting both an available bed and ambulance, and provides a private tracking code with a status timeline. Staff can accept or decline, validate a phone callback, assign an ambulance, and update dispatch milestones.
 - Hospital staff can register, sign in, edit facility and capacity details, and manage appointment and emergency inboxes.
+- Hospital staff can reset a password with the registered email, shared Health Commission code, CAPTCHA, and a new password. Passwords are one-way hashed and cannot be retrieved in plaintext.
+- Hospital staff can hide or restore their public listing. Hiding removes it from patient search while retaining the account, appointments, and reviews.
 - The page shows the current date and time in India and rotates general health reminders with links to CDC guidance.
 - Hospital registration and sign-in require the shared commission access code `admin222`.
 - Staff sign-in and hospital registration also use a one-time, five-minute CAPTCHA arithmetic challenge validated by the C++ server.
@@ -71,3 +74,8 @@ Before offering this to the public or exposing it beyond the local computer, add
 ## GitHub
 
 The source tree is organized for a GitHub repository. Compiled executables and local database files are excluded by `.gitignore`; commit the C++ source, headers, frontend, build script, and README. To publish it, initialize or clone the intended repository in this folder and push to the repository URL you choose.
+
+
+
+
+

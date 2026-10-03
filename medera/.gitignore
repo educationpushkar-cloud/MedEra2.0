@@ -1,7 +1,3 @@
-/medera.exe
-/medera-fixed.exe
-/medera-updated.exe
-/medera-final.exe
-/medera-qr.exe
+/medera*.exe
 /data/*.db
 /data/*.tmp

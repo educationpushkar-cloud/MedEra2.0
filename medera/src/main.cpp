@@ -362,6 +362,7 @@ void loadDatabase() {
         Hospital h; h.id=f[0]; h.name=f[1]; h.city=f[2]; h.area=f[3]; h.address=f[4]; h.phone=f[5];
         try { h.latitude=std::stod(f[6]); h.longitude=std::stod(f[7]); h.totalBeds=std::stoi(f[9]); h.availableBeds=std::stoi(f[10]); h.totalAmbulances=std::stoi(f[11]); h.availableAmbulances=std::stoi(f[12]); h.ratingSum=std::stod(f[13]); h.ratingCount=std::stoi(f[14]); } catch (...) { continue; }
         h.departments=f[8]; h.doctors=f[15]; h.updatedAt=f[16]; h.accountEmail=f[17]; h.createdAt=f[18]; hospitals.push_back(std::move(h));
+        if (f.size() >= 20) hospitals.back().listed = f[19] != "0";
     }
     for (const auto& line : readLines(DATA_DIR / "accounts.db")) {
         const auto f = splitFields(line); if (f.size() >= 4) accounts.push_back({f[0], lower(f[1]), f[2], f[3]});
@@ -384,7 +385,7 @@ void loadDatabase() {
 }
 void saveHospitals() {
     std::vector<std::string> lines;
-    for (const auto& h : hospitals) lines.push_back(encodeRecord({h.id,h.name,h.city,h.area,h.address,h.phone,jsonNumber(h.latitude),jsonNumber(h.longitude),h.departments,std::to_string(h.totalBeds),std::to_string(h.availableBeds),std::to_string(h.totalAmbulances),std::to_string(h.availableAmbulances),jsonNumber(h.ratingSum),std::to_string(h.ratingCount),h.doctors,h.updatedAt,h.accountEmail,h.createdAt}));
+    for (const auto& h : hospitals) lines.push_back(encodeRecord({h.id,h.name,h.city,h.area,h.address,h.phone,jsonNumber(h.latitude),jsonNumber(h.longitude),h.departments,std::to_string(h.totalBeds),std::to_string(h.availableBeds),std::to_string(h.totalAmbulances),std::to_string(h.availableAmbulances),jsonNumber(h.ratingSum),std::to_string(h.ratingCount),h.doctors,h.updatedAt,h.accountEmail,h.createdAt,h.listed?"1":"0"}));
     saveLines(DATA_DIR / "hospitals.db", lines);
 }
 void saveAccounts() {
@@ -418,6 +419,7 @@ std::string hospitalJson(const Hospital& h, double distance = -1, bool full = tr
         << ",\"totalBeds\":" << h.totalBeds << ",\"availableBeds\":" << h.availableBeds
         << ",\"totalAmbulances\":" << h.totalAmbulances << ",\"availableAmbulances\":" << h.availableAmbulances
         << ",\"rating\":" << jsonNumber(averageRating(h)) << ",\"ratingCount\":" << h.ratingCount
+        << ",\"listed\":" << (h.listed?"true":"false")
         << ",\"updatedAt\":" << jsonString(h.updatedAt) << ",\"distanceKm\":" << (distance<0?"null":jsonNumber(distance));
     if (full) {
         out << ",\"reviews\":[";
@@ -523,7 +525,7 @@ std::string api(const Request& request) {
     }
     if (request.method=="GET" && path.rfind("/api/hospitals/",0)==0) {
         const auto* h=hospitalById(path.substr(15));
-        return h?hospitalJson(*h):safeError("Hospital not found.");
+        return h&&h->listed?hospitalJson(*h):safeError("Hospital listing is not available.");
     }
     if (request.method=="POST" && path=="/api/register") {
         const auto name=param(body,"name"), city=param(body,"city"), area=param(body,"area"), email=lower(param(body,"email")), phone=param(body,"phone"), password=param(body,"password");
@@ -556,6 +558,25 @@ std::string api(const Request& request) {
         const auto* h=hospitalById(a->hospitalId);
         return "{\"token\":"+jsonString(token)+",\"hospital\":"+(h?hospitalJson(*h):"null")+"}";
     }
+    if (request.method=="POST" && path=="/api/password/reset") {
+        const auto email=lower(param(body,"email")), password=param(body,"newPassword"), confirmation=param(body,"confirmPassword");
+        if (!consumeCaptcha(body)) return safeError("CAPTCHA answer was incorrect or expired. Solve the refreshed check and try again.");
+        if (!constantTimeEqual(param(body,"licenseCode"),HOSPITAL_COMMISSION_CODE)) return safeError("The Health Commission code is incorrect.");
+        if (!validEmail(email)) return safeError("Enter the staff email registered to this hospital account.");
+        if (password.size()<12 || password.size()>128) return safeError("Use a new password between 12 and 128 characters.");
+        if (password!=confirmation) return safeError("The new passwords do not match.");
+        const auto account=std::find_if(accounts.begin(),accounts.end(),[&](const Account& item){return item.email==email;});
+        if (account!=accounts.end()) {
+            account->salt=randomHex(16);
+            account->passwordHash=makePasswordHash(password,account->salt);
+            saveAccounts();
+            std::lock_guard<std::mutex> sessionLock(sessionMutex);
+            for (auto it=sessions.begin();it!=sessions.end();) {
+                if (it->second==account->hospitalId) it=sessions.erase(it); else ++it;
+            }
+        }
+        return "{\"ok\":true,\"message\":\"If the staff email is registered, its password has been reset.\"}";
+    }
     if (request.method=="POST" && path=="/api/logout") {
         const auto token=authToken(request); { std::lock_guard<std::mutex> sessionLock(sessionMutex); sessions.erase(token); }
         return "{\"ok\":true}";
@@ -571,6 +592,14 @@ std::string api(const Request& request) {
             first=true;
             for (const auto& e : emergencies) if (e.hospitalId==staffId) { if (!first) emergenciesJson+=','; first=false; emergenciesJson+=emergencyJson(e,true); }
             return "{\"hospital\":"+hospitalJson(*ownHospital)+",\"appointments\":"+apps+"],\"emergencies\":"+emergenciesJson+"]}";
+        }
+        if (request.method=="POST" && path=="/api/staff/listing") {
+            const auto value=param(body,"listed");
+            if (value!="true" && value!="false") return safeError("Choose whether the hospital listing should be visible.");
+            ownHospital->listed=value=="true";
+            ownHospital->updatedAt=nowIso();
+            saveHospitals();
+            return "{\"hospital\":"+hospitalJson(*ownHospital)+"}";
         }
         if (request.method=="POST" && path=="/api/staff/profile") {
             const auto name=param(body,"name"), city=param(body,"city"), area=param(body,"area"), address=param(body,"address"), phone=param(body,"phone");
@@ -738,12 +767,13 @@ void handleClient(SOCKET client) {
             std::string file;
             if (request.path=="/"||request.path=="/index.html") file="public/index.html";
             else if (request.path=="/app.js") file="public/app.js";
+            else if (request.path=="/qr.js") file="public/qr.js";
             else if (request.path=="/styles.css") file="public/styles.css";
             else { sendResponse(client,404,"text/plain; charset=utf-8","Not found"); closesocket(client); return; }
             std::ifstream in(APP_DIR / file,std::ios::binary);
             if (!in) { sendResponse(client,500,"text/plain; charset=utf-8","App files are missing. Run the server from the MedEra folder."); closesocket(client); return; }
             std::ostringstream content; content<<in.rdbuf();
-            const auto type=request.path=="/app.js"?"text/javascript; charset=utf-8":request.path=="/styles.css"?"text/css; charset=utf-8":"text/html; charset=utf-8";
+            const auto type=(request.path=="/app.js"||request.path=="/qr.js")?"text/javascript; charset=utf-8":request.path=="/styles.css"?"text/css; charset=utf-8":"text/html; charset=utf-8";
             sendResponse(client,200,type,content.str());
         } else sendResponse(client,405,"text/plain; charset=utf-8","Method not allowed");
     } catch (const std::exception& error) {

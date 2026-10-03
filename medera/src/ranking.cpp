@@ -58,7 +58,7 @@ std::vector<Ranked> rankHospitals(const std::string& city, const std::string& ar
     std::priority_queue<Ranked, std::vector<Ranked>, LowerScore> top;
     for (const auto& id : candidates) {
         const auto* hospital = hospitalById(id);
-        if (!hospital) continue;
+        if (!hospital || !hospital->listed) continue;
         if (!area.empty() && normalize(hospital->area).find(areaKey) == std::string::npos) continue;
         if (hospital->address.empty() || hospital->departments.empty()) continue;
         if (!containsCaseInsensitive(hospital->departments, department)) continue;

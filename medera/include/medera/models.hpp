@@ -8,6 +8,7 @@ struct Hospital {
     std::string updatedAt, accountEmail, createdAt;
     double latitude = 0, longitude = 0, ratingSum = 0;
     int totalBeds = 0, availableBeds = 0, totalAmbulances = 0, availableAmbulances = 0, ratingCount = 0;
+    bool listed = true;
 };
 
 struct Account { std::string hospitalId, email, salt, passwordHash; };

@@ -145,7 +145,7 @@ function renderHospitalProfile(hospital) {
   const reviewsHtml = reviews.length ? reviews.map(review => {
     const stars = Math.max(0, Math.min(5, Number(review.stars) || 0));
     return `<article class="profile-review"><div class="profile-review-head"><span class="profile-review-stars" aria-label="${stars} out of 5 stars">${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}</span><time>${escapeHtml(formatDate(review.createdAt))}</time></div><p>${review.comment ? escapeHtml(review.comment) : '<span class="review-no-comment">Rating only, no written comment.</span>'}</p></article>`;
-  }).join('') : '<div class="profile-review-empty"><span aria-hidden="true">☆</span><strong>No reviews yet</strong><p>After a completed visit, patients can leave a rating and comment from request tracking.</p></div>';
+  }).join('') : '<div class="profile-review-empty"><span aria-hidden="true">☆</span><strong>No reviews yet</strong><p>A completed visit unlocks the review form. A rating appears here after the patient submits it from request tracking.</p></div>';
   const tel = String(hospital.phone || '').replace(/[^\d+]/g, '');
   $('#hospitalProfileContent').innerHTML = `<p class="dialog-kicker">HOSPITAL PROFILE</p><h2 id="profileDialogTitle">${escapeHtml(hospital.name)}</h2><p class="profile-location">⌖ ${escapeHtml([hospital.area, hospital.city].filter(Boolean).join(', '))}</p><div class="profile-summary"><span class="profile-summary-star" aria-hidden="true">★</span><strong>${ratingCount ? Number(hospital.rating).toFixed(1) : '—'}</strong><span>${rating}</span></div><dl class="profile-details"><div><dt>Address</dt><dd>${escapeHtml(hospital.address || 'Address not provided')}</dd></div><div><dt>Departments</dt><dd>${departments}</dd></div>${tel ? `<div><dt>Contact</dt><dd><a href="tel:${escapeHtml(tel)}">${escapeHtml(hospital.phone)}</a></dd></div>` : ''}</dl><div class="profile-review-heading"><h3>Patient ratings &amp; comments</h3><span>${ratingCount} total</span></div><div class="profile-reviews">${reviewsHtml}</div><button class="button appointment-submit profile-book-button" type="button" data-profile-book="${escapeHtml(hospital.id)}">Request an appointment <span aria-hidden="true">↗</span></button><p class="profile-disclaimer">Reviews are shared by patients after a completed appointment.</p>`;
 }
@@ -322,7 +322,7 @@ function renderAppointmentTracking(appointment) {
   const reviewPanel = canRate
     ? `<form class="rating-form" data-rating-code="${escapeHtml(appointment.id)}"><strong>How was your visit?</strong><label for="reviewStars">Your rating<select id="reviewStars" name="stars"><option value="5">★★★★★ · Excellent</option><option value="4">★★★★ · Good</option><option value="3">★★★ · Okay</option><option value="2">★★ · Poor</option><option value="1">★ · Very poor</option></select></label><label class="review-comment-label" for="reviewComment">Your review <span>optional</span></label><textarea id="reviewComment" name="comment" maxlength="800" rows="3" placeholder="Share a helpful note about your visit"></textarea><button type="submit">Submit review</button><p class="form-message review-message" aria-live="polite"></p></form>`
     : appointment.status === 'completed'
-      ? '<p class="review-thanks">Thanks — your review has already been submitted for this appointment.</p>'
+      ? `<p class="review-thanks">Thanks — your review has been submitted. <button class="text-button review-profile-link" type="button" data-review-profile="${escapeHtml(appointment.hospitalId)}">View it on the hospital profile ↗</button></p>`
       : ['requested', 'confirmed'].includes(appointment.status)
         ? '<p class="review-pending">You can leave a review after your visit, once the hospital marks this appointment complete.</p>'
         : '';
@@ -351,12 +351,23 @@ async function trackEmergency(code) {
 function setAuthTab(tab) {
   const registering = tab === 'register';
   $('#loginForm').hidden = registering;
+  $('#passwordResetForm').hidden = true;
   $('#registerForm').hidden = !registering;
   $$('[data-auth-tab]').forEach(button => {
     const active = button.dataset.authTab === tab;
     button.classList.toggle('active', active);
     button.setAttribute('aria-selected', String(active));
   });
+}
+function updateListingVisibility(hospital) {
+  const listed = hospital.listed !== false;
+  $('#listingVisibilityTitle').textContent = listed ? 'Listing is visible' : 'Listing is hidden';
+  $('#listingVisibilityDescription').textContent = listed
+    ? 'Patients can find this hospital in the public directory.'
+    : 'Patients cannot find this hospital in search. Your account, appointments, and reviews are retained.';
+  const button = $('#listingVisibilityButton');
+  button.dataset.listed = String(listed);
+  button.textContent = listed ? 'Hide listing' : 'Restore listing';
 }
 function fillProfile(hospital) {
   const form = $('#profileForm');
@@ -369,6 +380,7 @@ function fillProfile(hospital) {
   $('#dashboardEmail').textContent = hospital.accountEmail || '';
   $('#statBeds').textContent = `${hospital.availableBeds}/${hospital.totalBeds}`;
   $('#statAmbulances').textContent = `${hospital.availableAmbulances}/${hospital.totalAmbulances}`;
+  updateListingVisibility(hospital);
 }
 function appointmentInboxCard(item) {
   let actions = '';
@@ -404,6 +416,7 @@ async function loadDashboard({ updateProfile = false } = {}) {
       $('#dashboardEmail').textContent = data.hospital.accountEmail || '';
       $('#statBeds').textContent = `${data.hospital.availableBeds}/${data.hospital.totalBeds}`;
       $('#statAmbulances').textContent = `${data.hospital.availableAmbulances}/${data.hospital.totalAmbulances}`;
+      updateListingVisibility(data.hospital);
     }
     const pending = data.appointments.filter(item => ['requested', 'confirmed'].includes(item.status));
     const activeEmergency = data.emergencies.filter(item => !['completed', 'cancelled', 'no_hospital_available'].includes(item.status));
@@ -577,12 +590,12 @@ $('#appointmentForm').addEventListener('submit', async event => {
     $('#appointmentTrackForm').elements.code.value = result.appointment.id;
     await trackAppointment(result.appointment.id);
     const appointmentUrl = new URL('/', window.location.origin);
-    appointmentUrl.searchParams.set('appointment', result.appointment.id);
-    appointmentUrl.hash = 'track-request';
+    // Keep the QR payload compact so it fits even the small local QR encoder.
+    appointmentUrl.searchParams.set('a', result.appointment.id);
     let qrImage = '';
-    try { qrImage = MedEraQR.toCanvas(appointmentUrl.toString(), 6).toDataURL('image/png'); } catch { /* The appointment code remains usable if the link is too long for a QR. */ }
+    try { qrImage = MedEraQR.toCanvas(appointmentUrl.toString(), 6).toDataURL('image/png'); } catch (error) { console.error('Appointment QR generation failed:', error); }
     const localOnly = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
-    $('#appointmentTrackResult').insertAdjacentHTML('afterbegin', `<section class="appointment-confirmation"><div class="appointment-confirmation-copy"><span class="form-step">REQUEST SENT</span><h3>Save your appointment details</h3><p class="appointment-code-label">Appointment code</p><code class="appointment-code">${escapeHtml(result.appointment.id)}</code><p>Scan this QR to reopen MedEra with the code entered in request tracking.</p><p class="appointment-private-note">Keep this code and QR private; they open this request.</p>${localOnly ? '<p class="appointment-local-note">This local build can open the QR on this computer. Scanning from a phone requires MedEra to be hosted at a network address.</p>' : ''}${qrImage ? '' : '<p class="appointment-local-note">The request code is saved above, but this link was too long to fit in a QR image.</p>'}</div>${qrImage ? `<div class="appointment-qr-wrap"><img class="appointment-qr" src="${qrImage}" alt="QR code to reopen this appointment in MedEra"><a class="appointment-qr-download" href="${qrImage}" download="medera-appointment-${escapeHtml(result.appointment.id)}.png">Download QR image</a></div>` : ''}</section>`);
+    $('#appointmentTrackResult').insertAdjacentHTML('afterbegin', `<section class="appointment-confirmation"><div class="appointment-confirmation-copy"><span class="form-step">REQUEST SENT</span><h3>Save your appointment details</h3><p class="appointment-code-label">Appointment code</p><code class="appointment-code">${escapeHtml(result.appointment.id)}</code><p>Scan this QR to reopen MedEra with the code entered in request tracking.</p><p class="appointment-private-note">Keep this code and QR private; they open this request.</p>${localOnly ? '<p class="appointment-local-note">This local build can open the QR on this computer. Scanning from a phone requires MedEra to be hosted at a network address.</p>' : ''}${qrImage ? '' : '<p class="appointment-local-note">The QR code could not be generated in this browser. Keep the appointment code above to track the request.</p>'}</div>${qrImage ? `<div class="appointment-qr-wrap"><img class="appointment-qr" src="${qrImage}" alt="QR code to reopen this appointment in MedEra"><a class="appointment-qr-download" href="${qrImage}" download="medera-appointment-${escapeHtml(result.appointment.id)}.png">Download QR image</a></div>` : ''}</section>`);
     $('#track-request').scrollIntoView({ behavior: 'smooth', block: 'center' });
     showToast('Appointment sent. Save the code or QR image; the hospital must confirm your visit.');
   } catch (error) { showFormMessage(form, error.message, true); }
@@ -642,6 +655,10 @@ $('#appointmentTrackResult').addEventListener('submit', async event => {
     button.disabled = false;
   }
 });
+$('#appointmentTrackResult').addEventListener('click', event => {
+  const button = event.target.closest('[data-review-profile]');
+  if (button) openHospitalProfile(button.dataset.reviewProfile);
+});
 $('#emergencyTrackResult').addEventListener('click', async event => {
   const button = event.target.closest('[data-emergency-action]');
   if (!button) return;
@@ -656,6 +673,19 @@ $('#emergencyTrackResult').addEventListener('click', async event => {
 
 $$('[data-auth-tab]').forEach(button => button.addEventListener('click', () => setAuthTab(button.dataset.authTab)));
 $$('[data-captcha-refresh]').forEach(button => button.addEventListener('click', () => refreshCaptcha(button.closest('form'), button)));
+$('#forgotPasswordButton').addEventListener('click', async () => {
+  $('#loginForm').hidden = true;
+  $('#passwordResetForm').hidden = false;
+  await refreshCaptcha($('#passwordResetForm'));
+});
+$('#cancelPasswordReset').addEventListener('click', async () => {
+  const form = $('#passwordResetForm');
+  form.reset();
+  showFormMessage(form, '');
+  form.hidden = true;
+  $('#loginForm').hidden = false;
+  await refreshCaptcha($('#loginForm'));
+});
 $('#loginForm').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -664,6 +694,28 @@ $('#loginForm').addEventListener('submit', async event => {
   try { await establishSession(await api('/api/login', { method: 'POST', data: formData(form) })); form.reset(); showFormMessage(form, ''); }
   catch (error) { showFormMessage(form, error.message, true); await refreshCaptcha(form); }
   finally { button.disabled = false; }
+});
+$('#passwordResetForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = $('button[type="submit"]', form);
+  const values = formData(form);
+  if (values.newPassword !== values.confirmPassword) {
+    showFormMessage(form, 'The new passwords do not match.', true);
+    return;
+  }
+  button.disabled = true;
+  showFormMessage(form, 'Resetting password…');
+  try {
+    const result = await api('/api/password/reset', { method: 'POST', data: values });
+    form.reset();
+    showFormMessage(form, result.message || 'If the staff email is registered, its password has been reset.');
+  } catch (error) {
+    showFormMessage(form, error.message, true);
+  } finally {
+    await refreshCaptcha(form);
+    button.disabled = false;
+  }
 });
 $('#registerForm').addEventListener('submit', async event => {
   event.preventDefault();
@@ -686,6 +738,18 @@ $('#profileForm').addEventListener('submit', async event => {
 });
 $('#logoutButton').addEventListener('click', () => signOut(true));
 $('#refreshDashboard').addEventListener('click', () => loadDashboard());
+$('#listingVisibilityButton').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const result = await api('/api/staff/listing', { method: 'POST', data: { listed: String(button.dataset.listed !== 'true') }, auth: true });
+    updateListingVisibility(result.hospital);
+    await loadHospitals();
+    showToast(result.hospital.listed ? 'Hospital listing restored to public search.' : 'Hospital listing hidden from public search.');
+  } catch (error) {
+    showToast(error.message, true);
+  } finally { button.disabled = false; }
+});
 $('#appointmentInbox').addEventListener('click', async event => {
   const button = event.target.closest('[data-appointment-action]'); if (!button) return;
   button.disabled = true;
@@ -704,9 +768,11 @@ setInterval(updateSiteClock, 15000);
 setInterval(rotateHealthTip, 14000);
 refreshCaptcha($('#loginForm'));
 refreshCaptcha($('#registerForm'));
+refreshCaptcha($('#passwordResetForm'));
 if (state.staffToken) showDashboard();
 loadHospitals();
-const sharedAppointmentCode = new URLSearchParams(window.location.search).get('appointment');
+const sharedAppointmentParams = new URLSearchParams(window.location.search);
+const sharedAppointmentCode = sharedAppointmentParams.get('a') || sharedAppointmentParams.get('appointment');
 if (sharedAppointmentCode) {
   $('#appointmentCode').value = sharedAppointmentCode;
   trackAppointment(sharedAppointmentCode);

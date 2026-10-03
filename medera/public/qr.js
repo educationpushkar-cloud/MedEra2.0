@@ -1,10 +1,12 @@
-/* Small local QR encoder for appointment links (byte mode, error correction L). */
+/* Small local QR encoder for compact appointment links (byte mode, error correction L). */
 (function (global) {
   'use strict';
 
-  const DATA_CODEWORDS = [19, 34, 55, 80, 108];
-  const ECC_CODEWORDS = [7, 10, 15, 20, 26];
-  const ALIGNMENT_CENTER = [null, [], [18], [22], [26], [30]];
+  // Versions 1–3 each use a single error-correction block. Keep the payload
+  // within those versions so every generated image remains a standards-valid QR.
+  const DATA_CODEWORDS = [19, 34, 55];
+  const ECC_CODEWORDS = [7, 10, 15];
+  const ALIGNMENT_CENTER = [null, [], [18], [22]];
 
   function multiply(x, y) {
     let result = 0;
@@ -70,7 +72,7 @@
   function makeMatrix(text) {
     const bytes = [...new TextEncoder().encode(text)];
     const version = DATA_CODEWORDS.findIndex(capacity => 4 + 8 + bytes.length * 8 <= capacity * 8) + 1;
-    if (!version || bytes.length > 255) throw new Error('The link is too long for this QR code.');
+    if (!version || bytes.length > 53) throw new Error('The link is too long for this QR code.');
     const size = version * 4 + 17;
     const modules = Array.from({ length: size }, () => new Array(size).fill(false));
     const functions = Array.from({ length: size }, () => new Array(size).fill(false));
