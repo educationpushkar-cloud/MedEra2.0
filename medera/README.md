@@ -7,7 +7,7 @@ The interface is inspired by the clear location-first search and browsing patter
 ## Run locally on Windows
 
 1. Install MinGW-w64 UCRT64 and make `g++` available in `PATH`.
-2. In this folder, run `build.bat`.
+2. In this folder, run `build.bat`. It creates `medera.exe`. If that file is running and locked, use `build.bat medera-updated.exe` to compile to a second filename.
 3. Start the app with `medera.exe` (or `medera.exe 8090` to choose another port).
 4. Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser.
 
@@ -40,6 +40,8 @@ medera/
 - Ask for browser location only after a patient chooses **Use my location**. Coordinates are used locally to rank facilities and show relative positions. The map is an approximate schematic, not turn-by-turn navigation.
 - See hospital-reported bed and ambulance availability, ratings, contact links, and facility directions when coordinates are listed.
 - Submit and track appointment requests; hospital staff can confirm, decline, or complete them. A completed visit can receive one rating.
+- Patients enter their appointment code in the tracking section; the review form appears after hospital staff mark the visit complete. Reviews are limited to one per completed appointment.
+- Hospital registration and profile setup offer an explicit **Use current location** button to fill coordinates, with manual latitude/longitude fields kept available.
 - Create an emergency coordination request. The backend considers hospitals reporting both an available bed and ambulance, and provides a private tracking code with a status timeline. Staff can accept or decline, validate a phone callback, assign an ambulance, and update dispatch milestones.
 - Hospital staff can register, sign in, edit facility and capacity details, and manage appointment and emergency inboxes.
 - Persist records in `data/`; Windows DPAPI encrypts the database files for the Windows account running the server.

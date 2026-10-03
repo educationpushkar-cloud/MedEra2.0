@@ -486,12 +486,17 @@ std::string api(const Request& request) {
     }
     if (request.method=="POST" && path=="/api/register") {
         const auto name=param(body,"name"), city=param(body,"city"), area=param(body,"area"), email=lower(param(body,"email")), phone=param(body,"phone"), password=param(body,"password");
+        const bool hasLatitude=!param(body,"latitude").empty(), hasLongitude=!param(body,"longitude").empty();
+        const double latitude=numberParam(body,"latitude",std::numeric_limits<double>::quiet_NaN());
+        const double longitude=numberParam(body,"longitude",std::numeric_limits<double>::quiet_NaN());
         if (name.size()<2 || city.empty() || area.empty()) return safeError("Enter the hospital name, city, and locality.");
+        if (hasLatitude!=hasLongitude) return safeError("Enter both coordinates, or leave both blank.");
+        if (hasLatitude && (!std::isfinite(latitude)||!std::isfinite(longitude)||!validCoordinate(latitude,longitude))) return safeError("Enter valid latitude and longitude coordinates.");
         if (!validEmail(email)) return safeError("Enter a valid staff email address.");
         if (!validPhone(phone)) return safeError("Enter a valid hospital contact number.");
         if (password.size()<12 || password.size()>128) return safeError("Use a password between 12 and 128 characters.");
         if (std::any_of(accounts.begin(),accounts.end(),[&](const Account& a){return a.email==email;})) return safeError("An account already uses this email. Sign in instead.");
-        Hospital h; h.id=randomHex(12); h.name=name; h.city=city; h.area=area; h.phone=phone; h.accountEmail=email; h.createdAt=nowIso(); h.updatedAt=h.createdAt;
+        Hospital h; h.id=randomHex(12); h.name=name; h.city=city; h.area=area; h.phone=phone; h.accountEmail=email; h.latitude=hasLatitude?latitude:0; h.longitude=hasLongitude?longitude:0; h.createdAt=nowIso(); h.updatedAt=h.createdAt;
         Account a{h.id,email,randomHex(16),""}; a.passwordHash=makePasswordHash(password,a.salt);
         hospitals.push_back(h); accounts.push_back(a); rebuildIndexes(); saveHospitals(); saveAccounts();
         const auto token=randomHex(32); { std::lock_guard<std::mutex> sessionLock(sessionMutex); sessions[token]=h.id; }

@@ -179,6 +179,21 @@ function setLocation(button, status, targetForm = null) {
     status.textContent = error.code === 1 ? 'Location permission was not granted.' : 'Could not read location. You can search by city.';
   }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 });
 }
+function captureHospitalLocation(formId, buttonId, statusId) {
+  const form = $(`#${formId}`), button = $(`#${buttonId}`), status = $(`#${statusId}`);
+  if (!navigator.geolocation) { status.textContent = 'This browser does not provide location access. Enter coordinates manually.'; return; }
+  button.disabled = true;
+  status.textContent = 'Waiting for location permission…';
+  navigator.geolocation.getCurrentPosition(position => {
+    form.elements.latitude.value = position.coords.latitude.toFixed(6);
+    form.elements.longitude.value = position.coords.longitude.toFixed(6);
+    status.textContent = 'Coordinates added. You can adjust them before saving.';
+    button.disabled = false;
+  }, error => {
+    status.textContent = error.code === 1 ? 'Location permission was not granted. You can enter coordinates manually.' : 'Could not read location. You can enter coordinates manually.';
+    button.disabled = false;
+  }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 120000 });
+}
 function openAppointment(hospitalId) {
   const hospital = state.hospitals.find(item => item.id === hospitalId);
   if (!hospital) return;
@@ -202,7 +217,14 @@ function renderAppointmentTracking(appointment) {
   const container = $('#appointmentTrackResult');
   container.classList.remove('error');
   const canRate = appointment.status === 'completed' && !appointment.ratingSubmitted;
-  container.innerHTML = `<div class="track-status"><span class="status-pill">${escapeHtml(statusLabel(appointment.status))}</span><strong>${escapeHtml(appointment.hospitalName || 'Hospital')}</strong><span>${escapeHtml(appointment.department || '')}${appointment.doctor ? ` · ${escapeHtml(appointment.doctor)}` : ''}</span><span>${escapeHtml(formatDate(appointment.date))} · ${escapeHtml(appointment.time || '')}</span></div>${canRate ? `<form class="rating-form" data-rating-code="${escapeHtml(appointment.id)}"><label>Visit complete? Leave a rating<select name="stars"><option value="5">★★★★★ · Excellent</option><option value="4">★★★★ · Good</option><option value="3">★★★ · Okay</option><option value="2">★★ · Poor</option><option value="1">★ · Very poor</option></select></label><textarea name="comment" maxlength="800" rows="2" placeholder="Optional note about your visit"></textarea><button type="submit">Submit review</button></form>` : appointment.status === 'completed' ? '<span class="review-thanks">Thank you for sharing your feedback.</span>' : ''}`;
+  const reviewPanel = canRate
+    ? `<form class="rating-form" data-rating-code="${escapeHtml(appointment.id)}"><strong>How was your visit?</strong><label for="reviewStars">Your rating<select id="reviewStars" name="stars"><option value="5">★★★★★ · Excellent</option><option value="4">★★★★ · Good</option><option value="3">★★★ · Okay</option><option value="2">★★ · Poor</option><option value="1">★ · Very poor</option></select></label><label class="review-comment-label" for="reviewComment">Your review <span>optional</span></label><textarea id="reviewComment" name="comment" maxlength="800" rows="3" placeholder="Share a helpful note about your visit"></textarea><button type="submit">Submit review</button><p class="form-message review-message" aria-live="polite"></p></form>`
+    : appointment.status === 'completed'
+      ? '<p class="review-thanks">Thanks — your review has already been submitted for this appointment.</p>'
+      : ['requested', 'confirmed'].includes(appointment.status)
+        ? '<p class="review-pending">You can leave a review after your visit, once the hospital marks this appointment complete.</p>'
+        : '';
+  container.innerHTML = `<div class="track-status"><span class="status-pill">${escapeHtml(statusLabel(appointment.status))}</span><strong>${escapeHtml(appointment.hospitalName || 'Hospital')}</strong><span>${escapeHtml(appointment.department || '')}${appointment.doctor ? ` · ${escapeHtml(appointment.doctor)}` : ''}</span><span>${escapeHtml(formatDate(appointment.date))} · ${escapeHtml(appointment.time || '')}</span></div>${reviewPanel}`;
 }
 function renderEmergencyTracking(emergency) {
   const container = $('#emergencyTrackResult');
@@ -339,6 +361,8 @@ $('#searchSort').addEventListener('change', () => {
 });
 $('#useLocationButton').addEventListener('click', event => setLocation(event.currentTarget, $('#locationStatus')));
 $('#emergencyLocationButton').addEventListener('click', event => setLocation(event.currentTarget, $('#emergencyLocationStatus'), 'emergency'));
+$('#registerLocationButton').addEventListener('click', () => captureHospitalLocation('registerForm', 'registerLocationButton', 'registerLocationStatus'));
+$('#profileLocationButton').addEventListener('click', () => captureHospitalLocation('profileForm', 'profileLocationButton', 'profileLocationStatus'));
 $('#navStaffButton').addEventListener('click', () => openStaff());
 $('#hostCtaButton').addEventListener('click', () => openStaff(true));
 $('#emptyRegisterButton').addEventListener('click', () => openStaff(true));
@@ -451,12 +475,21 @@ $('#appointmentTrackResult').addEventListener('submit', async event => {
   if (!event.target.matches('.rating-form')) return;
   event.preventDefault();
   const form = event.target;
+  const button = $('button[type="submit"]', form);
+  const message = $('.form-message', form);
+  button.disabled = true;
+  message.textContent = 'Sending your review…';
+  message.classList.remove('error');
   try {
     await api('/api/ratings', { method: 'POST', data: { appointmentId: form.dataset.ratingCode, ...formData(form) } });
-    showToast('Thanks for sharing a review.');
+    showToast('Thanks for sharing your review.');
     await trackAppointment(form.dataset.ratingCode);
     await loadHospitals();
-  } catch (error) { showToast(error.message, true); }
+  } catch (error) {
+    message.textContent = error.message;
+    message.classList.add('error');
+    button.disabled = false;
+  }
 });
 $('#emergencyTrackResult').addEventListener('click', async event => {
   const button = event.target.closest('[data-emergency-action]');
