@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#edf3ee">
   <meta name="description" content="Find nearby hospitals, compare current availability, and request care through MedEra.">
   <title>MedEra — Find care nearby</title>
   <link rel="stylesheet" href="/styles.css">
+  <script defer src="/qr.js"></script>
   <script defer src="/app.js"></script>
 </head>
 <body>
@@ -21,11 +22,19 @@
       <button type="button" class="nav-category nav-emergency-link" data-top-category="emergency"><span class="nav-icon" aria-hidden="true">↗</span>Emergency</button>
     </nav>
     <div class="top-actions">
+      <div class="datetime-widget" aria-label="Current India date and time"><span id="siteDate">Loading date…</span><strong id="siteTime">--:--</strong><span>IST</span></div>
       <button type="button" class="text-action" id="navStaffButton">For hospitals</button>
       <button type="button" class="requests-button" id="navTrackButton"><span class="requests-icon" aria-hidden="true">▤</span><span>Track a request</span></button>
       <button type="button" class="emergency-button" id="emergencyNavButton"><span aria-hidden="true">!</span> Urgent help</button>
     </div>
   </header>
+
+  <aside class="health-tip-ribbon" aria-label="Everyday health tip">
+    <span class="tip-label"><span aria-hidden="true">✦</span> A small health reminder</span>
+    <p id="healthTipText">Some physical activity is better than none.</p>
+    <a id="healthTipSource" href="https://www.cdc.gov/physical-activity-basics/guidelines/adults.html" target="_blank" rel="noopener noreferrer">CDC guidance ↗</a>
+    <span class="tip-caveat">General wellness information</span>
+  </aside>
 
   <section class="search-region" aria-label="Hospital search">
     <div class="search-tabs" role="tablist" aria-label="Search type">
@@ -81,7 +90,7 @@
       <div class="results-meta"><span id="resultsCount"></span><span class="live-label"><i></i> Capacity updated by each hospital</span></div>
       <div class="hospital-grid" id="hospitalResults" aria-live="polite"></div>
       <div class="map-view" id="mapView" hidden>
-        <div class="map-panel"><div class="map-topline"><span>Relative hospital locations</span><span class="map-key"><i></i> Hospitals <b></b> Your location</span></div><div class="map-plot" id="mapPlot"></div><p class="map-disclaimer">Approximate relative positions from hospital coordinates, not a road map. Use directions from your maps app.</p></div>
+        <div class="map-panel"><div class="map-topline"><span>Approximate hospital locations</span><span class="map-key"><i></i> Hospitals <b></b> Your location</span></div><div class="map-workspace"><div class="map-plot" id="mapPlot" aria-label="Interactive map of hospital locations"></div><div class="map-zoom-controls" role="group" aria-label="Map zoom controls"><button type="button" id="mapZoomIn" aria-label="Zoom in" title="Zoom in">+</button><button type="button" id="mapZoomOut" aria-label="Zoom out" title="Zoom out">−</button><button type="button" id="mapReset" aria-label="Fit all locations" title="Fit all locations">⌖</button></div></div><p class="map-disclaimer" id="mapDisclaimer">Drag to move. Use + and − to zoom. Locations are approximate, not road directions. Select a marker for hospital details.</p></div>
         <aside class="map-results"><h2>In this area</h2><div id="mapHospitalList"></div></aside>
       </div>
       <div class="empty-state" id="emptyState" hidden>
@@ -102,6 +111,11 @@
 
     <section class="host-cta"><div class="host-cta-inner"><div><span class="eyebrow">FOR HOSPITAL TEAMS</span><h2>Help people find the care you provide.</h2><p>Keep your details current and manage requests in a simple staff workspace.</p></div><button type="button" id="hostCtaButton" class="host-cta-button">List your hospital <span aria-hidden="true">↗</span></button></div></section>
   </main>
+
+  <dialog class="request-dialog hospital-profile-dialog" id="hospitalProfileDialog" aria-labelledby="profileDialogTitle">
+    <button class="dialog-close" type="button" id="closeHospitalProfile" aria-label="Close">×</button>
+    <div id="hospitalProfileContent" aria-live="polite"><p class="dialog-kicker">HOSPITAL PROFILE</p><h2 id="profileDialogTitle">Hospital details</h2></div>
+  </dialog>
 
   <dialog class="request-dialog" id="emergencyDialog">
     <button class="dialog-close" type="button" id="closeEmergency" aria-label="Close">×</button>
@@ -137,11 +151,11 @@
   <dialog class="staff-dialog" id="staffDialog">
     <button class="dialog-close" type="button" id="closeStaff" aria-label="Close">×</button>
     <section class="hospital-section" id="hospital-portal">
-      <div class="hospital-intro"><span class="eyebrow">MEDERA PARTNER PORTAL</span><h2>Your hospital.<br>Your information.</h2><p>Manage your listing, update availability, and respond to requests from one workspace.</p><p class="hospital-data-note">Listings are hospital-managed and not independently verified. Patients are asked to confirm availability by phone.</p></div>
+      <div class="hospital-intro"><span class="eyebrow">MEDERA PARTNER PORTAL</span><h2>Your hospital.<br>Your information.</h2><p>Manage your listing, update availability, and respond to requests from one workspace.</p><p class="hospital-data-note">Listings are hospital-managed and not independently verified. The shared commission code is an access gate; it does not confirm a hospital licence. Patients are asked to confirm availability by phone.</p></div>
       <div class="portal-card" id="portalCard">
         <div class="auth-view" id="authView">
           <div class="portal-tabs" role="tablist" aria-label="Hospital account"><button class="portal-tab active" type="button" role="tab" aria-selected="true" data-auth-tab="login">Staff sign in</button><button class="portal-tab" type="button" role="tab" aria-selected="false" data-auth-tab="register">Register hospital</button></div>
-          <form class="auth-form" id="loginForm"><div class="form-heading"><div><span class="form-step">STAFF PORTAL</span><h3>Welcome back.</h3></div></div><label class="field"><span>Staff email</span><input type="email" name="email" autocomplete="username" required maxlength="254" placeholder="you@hospital.org"></label><label class="field"><span>Password</span><input type="password" name="password" autocomplete="current-password" required maxlength="128" placeholder="Your password"></label><button class="button button-dark button-wide" type="submit">Sign in <span aria-hidden="true">↗</span></button><p class="form-message" aria-live="polite"></p></form>
+          <form class="auth-form" id="loginForm"><div class="form-heading"><div><span class="form-step">STAFF PORTAL</span><h3>Welcome back.</h3></div></div><label class="field"><span>Health Commission code</span><input type="password" name="licenseCode" autocomplete="off" required maxlength="64" placeholder="Enter your commission code"></label><label class="field"><span>Staff email</span><input type="email" name="email" autocomplete="username" required maxlength="254" placeholder="you@hospital.org"></label><label class="field"><span>Password</span><input type="password" name="password" autocomplete="current-password" required maxlength="128" placeholder="Your password"></label><div class="captcha-box"><div class="captcha-heading"><strong>CAPTCHA check</strong><button type="button" class="captcha-refresh" data-captcha-refresh aria-label="Get a new CAPTCHA question" title="Get a new question">↻</button></div><p class="captcha-question" data-captcha-question>Loading check…</p><input type="hidden" name="captchaId"><label class="field captcha-answer"><span>Your answer</span><input type="number" inputmode="numeric" name="captchaAnswer" required autocomplete="off" placeholder="Enter the result"></label></div><button class="button button-dark button-wide" type="submit">Sign in <span aria-hidden="true">↗</span></button><p class="form-message" aria-live="polite"></p></form>
           <form class="auth-form" id="registerForm" hidden>
             <div class="form-heading"><div><span class="form-step">NEW LISTING</span><h3>Join the directory.</h3></div></div>
             <label class="field"><span>Hospital name</span><input name="name" required minlength="2" maxlength="120" placeholder="Official hospital name"></label>
@@ -151,8 +165,10 @@
             <label class="field"><span>Hospital contact number</span><input name="phone" required maxlength="32" placeholder="A number patients can call"></label>
             <label class="field"><span>Staff email</span><input type="email" name="email" autocomplete="email" required maxlength="254" placeholder="you@hospital.org"></label>
             <label class="field"><span>Create password <small>12 characters minimum</small></span><input type="password" name="password" autocomplete="new-password" required minlength="12" maxlength="128" placeholder="Use a unique password"></label>
+            <label class="field"><span>Health Commission code</span><input type="password" name="licenseCode" autocomplete="off" required maxlength="64" placeholder="Enter your commission code"></label>
+            <div class="captcha-box"><div class="captcha-heading"><strong>CAPTCHA check</strong><button type="button" class="captcha-refresh" data-captcha-refresh aria-label="Get a new CAPTCHA question" title="Get a new question">↻</button></div><p class="captcha-question" data-captcha-question>Loading check…</p><input type="hidden" name="captchaId"><label class="field captcha-answer"><span>Your answer</span><input type="number" inputmode="numeric" name="captchaAnswer" required autocomplete="off" placeholder="Enter the result"></label></div>
             <button class="button button-dark button-wide" type="submit">Create hospital account <span aria-hidden="true">↗</span></button><p class="form-message" aria-live="polite"></p>
-            <p class="form-footnote">You can edit this pin and complete the rest of your hospital details in the staff workspace.</p>
+            <p class="form-footnote">You can edit this pin and complete the rest of your hospital details in the staff workspace. The shared code does not independently prove licence status.</p>
           </form>
         </div>
         <div class="dashboard-view" id="dashboardView" hidden>

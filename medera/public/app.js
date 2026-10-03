@@ -3,9 +3,15 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = {
   latitude: null, longitude: null, emergencyLatitude: null, emergencyLongitude: null,
   hospitals: [], emergencyOnly: false, mapMode: false,
+  mapCenter: null, mapZoom: null, mapPointer: null,
   favorites: (() => { try { return new Set(JSON.parse(localStorage.getItem('medera_favorites') || '[]')); } catch { return new Set(); } })(),
   staffToken: sessionStorage.getItem('medera_token') || '', dashboardTimer: null
 };
+const healthTips = [
+  { text: 'Some physical activity is better than none. Move more and sit less when you can.', href: 'https://www.cdc.gov/physical-activity-basics/guidelines/adults.html' },
+  { text: 'Clean hands with soap and water help reduce the spread of germs.', href: 'https://www.cdc.gov/clean-hands/faq/index.html' }
+];
+let healthTipIndex = 0;
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
@@ -30,6 +36,23 @@ async function api(path, { method = 'GET', data, auth = false } = {}) {
   if (!response.ok || result.error) throw new Error(result.error || `Request failed (${response.status}).`);
   return result;
 }
+async function refreshCaptcha(form, button = $('[data-captcha-refresh]', form)) {
+  const question = $('[data-captcha-question]', form);
+  const idField = form.elements.captchaId;
+  const answerField = form.elements.captchaAnswer;
+  if (!question || !idField || !answerField) return;
+  if (button) button.disabled = true;
+  idField.value = '';
+  answerField.value = '';
+  question.textContent = 'Loading check…';
+  try {
+    const challenge = await api('/api/captcha');
+    idField.value = challenge.id;
+    question.textContent = challenge.question;
+  } catch (error) {
+    question.textContent = 'Could not load. Use ↻ to retry.';
+  } finally { if (button) button.disabled = false; }
+}
 function showToast(message, error = false) {
   const toast = $('#toast');
   toast.textContent = message;
@@ -48,6 +71,17 @@ function formatDate(value) {
   if (!value) return '';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+}
+function updateSiteClock() {
+  const now = new Date();
+  $('#siteDate').textContent = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short' }).format(now);
+  $('#siteTime').textContent = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }).format(now);
+}
+function rotateHealthTip() {
+  healthTipIndex = (healthTipIndex + 1) % healthTips.length;
+  const tip = healthTips[healthTipIndex];
+  $('#healthTipText').textContent = tip.text;
+  $('#healthTipSource').href = tip.href;
 }
 function formatTimestamp(value) {
   if (!value) return 'Not available';
@@ -98,10 +132,29 @@ function renderHospitalCard(hospital, index) {
       <p class="card-address" title="${escapeHtml(hospital.address || '')}">${escapeHtml(hospital.address || 'Address details are being added by the hospital.')}</p>
       <div class="card-stats"><span class="card-stat"><strong>${Number(hospital.availableBeds) || 0}</strong> ${bedsText}</span><span class="card-stat-separator" aria-hidden="true"></span><span class="card-stat"><strong>${Number(hospital.availableAmbulances) || 0}</strong> ambulances</span>${distance}</div>
       <p class="card-departments">${hasDepartments ? departments.map(escapeHtml).join(' · ') + (moreDepartments ? ` · +${moreDepartments}` : '') : 'Hospital team is completing this listing.'}</p>
-      <div class="hospital-card-actions"><button class="card-book" type="button" data-book="${escapeHtml(hospital.id)}" ${hasDepartments ? '' : 'disabled title="The hospital has not listed departments yet"'}>Request appointment <span aria-hidden="true">↗</span></button>${tel ? `<a class="card-call" href="tel:${escapeHtml(tel)}">Call</a>` : ''}${directions ? `<a class="card-call" href="${directions}" target="_blank" rel="noopener noreferrer">Directions</a>` : ''}</div>
+      <div class="hospital-card-actions"><button class="card-book" type="button" data-book="${escapeHtml(hospital.id)}" ${hasDepartments ? '' : 'disabled title="The hospital has not listed departments yet"'}>Request appointment <span aria-hidden="true">↗</span></button><button class="card-profile" type="button" data-profile="${escapeHtml(hospital.id)}">Profile &amp; reviews</button>${tel ? `<a class="card-call" href="tel:${escapeHtml(tel)}">Call</a>` : ''}${directions ? `<a class="card-call" href="${directions}" target="_blank" rel="noopener noreferrer">Directions</a>` : ''}</div>
       <p class="hospital-updated">${escapeHtml(timeAgo(hospital.updatedAt))} · Confirm details by phone</p>
     </div>
   </article>`;
+}
+function renderHospitalProfile(hospital) {
+  const reviews = [...(hospital.reviews || [])].reverse();
+  const ratingCount = Number(hospital.ratingCount) || 0;
+  const rating = ratingCount ? `${Number(hospital.rating).toFixed(1)} out of 5 · ${ratingCount} ${ratingCount === 1 ? 'review' : 'reviews'}` : 'No patient ratings yet';
+  const departments = (hospital.departments || []).length ? hospital.departments.map(escapeHtml).join(' · ') : 'Not listed';
+  const reviewsHtml = reviews.length ? reviews.map(review => {
+    const stars = Math.max(0, Math.min(5, Number(review.stars) || 0));
+    return `<article class="profile-review"><div class="profile-review-head"><span class="profile-review-stars" aria-label="${stars} out of 5 stars">${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}</span><time>${escapeHtml(formatDate(review.createdAt))}</time></div><p>${review.comment ? escapeHtml(review.comment) : '<span class="review-no-comment">Rating only, no written comment.</span>'}</p></article>`;
+  }).join('') : '<div class="profile-review-empty"><span aria-hidden="true">☆</span><strong>No reviews yet</strong><p>After a completed visit, patients can leave a rating and comment from request tracking.</p></div>';
+  const tel = String(hospital.phone || '').replace(/[^\d+]/g, '');
+  $('#hospitalProfileContent').innerHTML = `<p class="dialog-kicker">HOSPITAL PROFILE</p><h2 id="profileDialogTitle">${escapeHtml(hospital.name)}</h2><p class="profile-location">⌖ ${escapeHtml([hospital.area, hospital.city].filter(Boolean).join(', '))}</p><div class="profile-summary"><span class="profile-summary-star" aria-hidden="true">★</span><strong>${ratingCount ? Number(hospital.rating).toFixed(1) : '—'}</strong><span>${rating}</span></div><dl class="profile-details"><div><dt>Address</dt><dd>${escapeHtml(hospital.address || 'Address not provided')}</dd></div><div><dt>Departments</dt><dd>${departments}</dd></div>${tel ? `<div><dt>Contact</dt><dd><a href="tel:${escapeHtml(tel)}">${escapeHtml(hospital.phone)}</a></dd></div>` : ''}</dl><div class="profile-review-heading"><h3>Patient ratings &amp; comments</h3><span>${ratingCount} total</span></div><div class="profile-reviews">${reviewsHtml}</div><button class="button appointment-submit profile-book-button" type="button" data-profile-book="${escapeHtml(hospital.id)}">Request an appointment <span aria-hidden="true">↗</span></button><p class="profile-disclaimer">Reviews are shared by patients after a completed appointment.</p>`;
+}
+async function openHospitalProfile(id) {
+  const dialog = $('#hospitalProfileDialog');
+  $('#hospitalProfileContent').innerHTML = '<p class="dialog-kicker">HOSPITAL PROFILE</p><h2 id="profileDialogTitle">Loading hospital details…</h2><p class="profile-loading">Loading ratings and comments…</p>';
+  if (!dialog.open) dialog.showModal();
+  try { renderHospitalProfile(await api(`/api/hospitals/${encodeURIComponent(id)}`)); }
+  catch (error) { $('#hospitalProfileContent').innerHTML = `<p class="dialog-kicker">HOSPITAL PROFILE</p><h2 id="profileDialogTitle">Could not load this profile</h2><p class="profile-loading error">${escapeHtml(error.message)}</p>`; }
 }
 function setResultsView(mapMode) {
   state.mapMode = mapMode;
@@ -112,21 +165,70 @@ function setResultsView(mapMode) {
   $('#listViewButton').setAttribute('aria-pressed', String(!mapMode));
   $('#mapViewButton').setAttribute('aria-pressed', String(mapMode));
 }
-function renderMap() {
-  const plotted = state.hospitals.filter(hospital => Number.isFinite(Number(hospital.latitude)) && Number.isFinite(Number(hospital.longitude)) && (Number(hospital.latitude) !== 0 || Number(hospital.longitude) !== 0));
-  if (!plotted.length) {
-    $('#mapPlot').innerHTML = '<p class="map-empty">Hospitals add their coordinates in the partner workspace to appear here.</p>';
-  } else {
-    const lats = plotted.map(h => Number(h.latitude)), lons = plotted.map(h => Number(h.longitude));
-    if (state.latitude !== null && state.longitude !== null) { lats.push(state.latitude); lons.push(state.longitude); }
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats), minLon = Math.min(...lons), maxLon = Math.max(...lons);
-    const clamp = value => Math.max(8, Math.min(92, value));
-    const x = value => clamp(maxLon === minLon ? 50 : 12 + ((value - minLon) / (maxLon - minLon)) * 76);
-    const y = value => clamp(maxLat === minLat ? 50 : 14 + ((maxLat - value) / (maxLat - minLat)) * 72);
-    const userPin = state.latitude === null ? '' : `<span class="map-you" style="left:${x(state.longitude)}%;top:${y(state.latitude)}%" title="Your location"></span>`;
-    $('#mapPlot').innerHTML = userPin + plotted.map((hospital, index) => `<button class="map-point" style="left:${x(Number(hospital.longitude))}%;top:${y(Number(hospital.latitude))}%" type="button" data-map-hospital="${escapeHtml(hospital.id)}" aria-label="Show ${escapeHtml(hospital.name)}"><span class="map-pin"><span>${index + 1}</span></span><span class="map-point-label">${escapeHtml(hospital.name)}</span></button>`).join('');
-  }
+function validMapPoint(latitude, longitude) {
+  return Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -85.0511 && latitude <= 85.0511 && longitude >= -180 && longitude <= 180 && (latitude !== 0 || longitude !== 0);
+}
+function mapWorldPoint(latitude, longitude, zoom) {
+  const safeLatitude = Math.max(-85.0511, Math.min(85.0511, latitude));
+  const size = 256 * (2 ** zoom), radians = safeLatitude * Math.PI / 180;
+  return { x: ((longitude + 180) / 360) * size, y: ((1 - Math.asinh(Math.tan(radians)) / Math.PI) / 2) * size };
+}
+function mapGeoPoint(x, y, zoom) {
+  const size = 256 * (2 ** zoom), longitude = x / size * 360 - 180;
+  const n = Math.PI - 2 * Math.PI * y / size;
+  return { latitude: Math.atan(Math.sinh(n)) * 180 / Math.PI, longitude };
+}
+function fitMapToLocations(points, width, height) {
+  const projected = points.map(point => mapWorldPoint(point.latitude, point.longitude, 0));
+  const xs = projected.map(point => point.x), ys = projected.map(point => point.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const spanX = Math.max(maxX - minX, 0.00002), spanY = Math.max(maxY - minY, 0.00002);
+  const zoomX = Math.log2(Math.max(1, width - 130) / (256 * spanX));
+  const zoomY = Math.log2(Math.max(1, height - 120) / (256 * spanY));
+  const zoom = points.length === 1 ? 12 : Math.max(3, Math.min(17, Math.floor(Math.min(zoomX, zoomY))));
+  const center = mapGeoPoint((minX + maxX) / 2 * (2 ** zoom), (minY + maxY) / 2 * (2 ** zoom), zoom);
+  return { center, zoom };
+}
+function renderMap(fit = false) {
+  const plotted = state.hospitals.filter(hospital => validMapPoint(Number(hospital.latitude), Number(hospital.longitude)));
   $('#mapHospitalList').innerHTML = state.hospitals.map((hospital, index) => `<button class="map-result-item" type="button" data-map-hospital="${escapeHtml(hospital.id)}"><strong>${index + 1}. ${escapeHtml(hospital.name)}</strong><span>${escapeHtml([hospital.area, hospital.city].filter(Boolean).join(', '))}${hospital.distanceKm == null ? '' : ` · ${Number(hospital.distanceKm).toFixed(1)} km`}</span></button>`).join('');
+  const plot = $('#mapPlot');
+  if (!state.mapMode && $('#mapView').hidden) return;
+  if (!plotted.length) {
+    plot.innerHTML = '<p class="map-empty">Hospitals need a saved latitude and longitude before they can appear on the map. Their profiles and contact details are still available in list view.</p>';
+    $('#mapDisclaimer').textContent = 'Hospital teams can add coordinates from the partner workspace.';
+    return;
+  }
+  const width = plot.clientWidth || 760, height = plot.clientHeight || 340;
+  if (fit || !state.mapCenter || state.mapZoom === null) {
+    const points = plotted.map(hospital => ({ latitude: Number(hospital.latitude), longitude: Number(hospital.longitude) }));
+    if (state.latitude !== null && state.longitude !== null) points.push({ latitude: state.latitude, longitude: state.longitude });
+    const view = fitMapToLocations(points, width, height);
+    state.mapCenter = view.center;
+    state.mapZoom = view.zoom;
+  }
+  const zoom = Math.max(3, Math.min(18, state.mapZoom));
+  state.mapZoom = zoom;
+  const center = mapWorldPoint(state.mapCenter.latitude, state.mapCenter.longitude, zoom);
+  const userMarker = state.latitude === null ? '' : '<span class="map-you" title="Your location" aria-label="Your location"></span>';
+  const hospitalMarkers = plotted.map((hospital, index) => `<button class="map-point" type="button" data-map-hospital="${escapeHtml(hospital.id)}" aria-label="Open profile for ${escapeHtml(hospital.name)}"><span class="map-pin"><span>${index + 1}</span></span><span class="map-point-label">${escapeHtml(hospital.name)}</span></button>`).join('');
+  plot.innerHTML = `<div class="map-scene"><div class="map-local-lines" aria-hidden="true"><span></span><span></span><span></span><span></span></div><div class="map-marker-layer">${userMarker}${hospitalMarkers}</div></div>`;
+  const position = (element, latitude, longitude) => {
+    const point = mapWorldPoint(latitude, longitude, zoom);
+    let dx = point.x - center.x;
+    const worldSize = 256 * (2 ** zoom);
+    if (dx > worldSize / 2) dx -= worldSize;
+    if (dx < -worldSize / 2) dx += worldSize;
+    element.style.left = `${width / 2 + dx}px`;
+    element.style.top = `${height / 2 + point.y - center.y}px`;
+  };
+  $$('.map-point', plot).forEach(button => {
+    const hospital = plotted.find(item => item.id === button.dataset.mapHospital);
+    if (hospital) position(button, Number(hospital.latitude), Number(hospital.longitude));
+  });
+  const userPin = $('.map-you', plot);
+  if (userPin) position(userPin, state.latitude, state.longitude);
+  $('#mapDisclaimer').textContent = 'Drag to move the map. Use + and − to zoom. Positions are approximate, not road directions. Select a marker for hospital details.';
 }
 async function loadHospitals() {
   const values = {
@@ -143,9 +245,9 @@ async function loadHospitals() {
     $('#resultsCount').textContent = `${data.count} ${data.count === 1 ? 'hospital' : 'hospitals'}`;
     $('#filterButton').classList.toggle('active', $('#bedsOnly').checked);
     $('#hospitalResults').innerHTML = state.hospitals.map(renderHospitalCard).join('');
-    renderMap();
     $('#emptyState').hidden = state.hospitals.length !== 0;
     setResultsView(state.mapMode);
+    renderMap(true);
   } catch (error) {
     $('#hospitalResults').innerHTML = '';
     $('#hospitalResults').hidden = true;
@@ -374,7 +476,43 @@ $('#emergencyDialog').addEventListener('click', event => { if (event.target === 
 $('#closeStaff').addEventListener('click', () => $('#staffDialog').close());
 $('#staffDialog').addEventListener('click', event => { if (event.target === $('#staffDialog')) $('#staffDialog').close(); });
 $('#listViewButton').addEventListener('click', () => setResultsView(false));
-$('#mapViewButton').addEventListener('click', () => { renderMap(); setResultsView(true); });
+$('#mapViewButton').addEventListener('click', () => { setResultsView(true); requestAnimationFrame(() => renderMap(true)); });
+$('#mapZoomIn').addEventListener('click', () => { if (state.mapZoom !== null) { state.mapZoom = Math.min(18, state.mapZoom + 1); renderMap(); } });
+$('#mapZoomOut').addEventListener('click', () => { if (state.mapZoom !== null) { state.mapZoom = Math.max(3, state.mapZoom - 1); renderMap(); } });
+$('#mapReset').addEventListener('click', () => renderMap(true));
+$('#mapPlot').addEventListener('wheel', event => {
+  if (state.mapZoom === null) return;
+  event.preventDefault();
+  state.mapZoom = Math.max(3, Math.min(18, state.mapZoom + (event.deltaY < 0 ? 1 : -1)));
+  renderMap();
+}, { passive: false });
+$('#mapPlot').addEventListener('pointerdown', event => {
+  if (event.target.closest('button')) return;
+  state.mapPointer = { x: event.clientX, y: event.clientY, dx: 0, dy: 0 };
+  $('#mapPlot').setPointerCapture(event.pointerId);
+  $('#mapPlot').classList.add('dragging');
+});
+$('#mapPlot').addEventListener('pointermove', event => {
+  if (!state.mapPointer) return;
+  state.mapPointer.dx = event.clientX - state.mapPointer.x;
+  state.mapPointer.dy = event.clientY - state.mapPointer.y;
+  const scene = $('.map-scene', $('#mapPlot'));
+  if (scene) scene.style.transform = `translate(${state.mapPointer.dx}px,${state.mapPointer.dy}px)`;
+});
+function finishMapPan() {
+  if (!state.mapPointer) return;
+  const { dx, dy } = state.mapPointer;
+  const moved = Math.abs(dx) > 3 || Math.abs(dy) > 3;
+  state.mapPointer = null;
+  $('#mapPlot').classList.remove('dragging');
+  if (!moved || state.mapZoom === null) return;
+  const center = mapWorldPoint(state.mapCenter.latitude, state.mapCenter.longitude, state.mapZoom);
+  state.mapCenter = mapGeoPoint(center.x - dx, center.y - dy, state.mapZoom);
+  renderMap();
+}
+$('#mapPlot').addEventListener('pointerup', finishMapPan);
+$('#mapPlot').addEventListener('pointercancel', finishMapPan);
+window.addEventListener('resize', () => { if (state.mapMode) { clearTimeout(renderMap.resizeTimer); renderMap.resizeTimer = setTimeout(() => renderMap(), 120); } });
 $('#filterButton').addEventListener('click', () => { $('#bedsOnly').checked = !$('#bedsOnly').checked; loadHospitals(); });
 $$('[data-search-tab]').forEach(button => button.addEventListener('click', () => {
   state.emergencyOnly = button.dataset.searchTab === 'emergency';
@@ -405,17 +543,24 @@ $('#hospitalResults').addEventListener('click', event => {
     saveButton.setAttribute('aria-label', state.favorites.has(id) ? 'Remove saved hospital' : 'Save hospital');
     return;
   }
+  const profileButton = event.target.closest('[data-profile]');
+  if (profileButton) { openHospitalProfile(profileButton.dataset.profile); return; }
   const button = event.target.closest('[data-book]');
   if (button && !button.disabled) openAppointment(button.dataset.book);
 });
 $('#mapView').addEventListener('click', event => {
   const button = event.target.closest('[data-map-hospital]');
   if (!button) return;
-  setResultsView(false);
-  const card = $(`#hospital-card-${CSS.escape(button.dataset.mapHospital)}`);
-  card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  card?.classList.add('map-highlight');
-  setTimeout(() => card?.classList.remove('map-highlight'), 1500);
+  openHospitalProfile(button.dataset.mapHospital);
+});
+$('#closeHospitalProfile').addEventListener('click', () => $('#hospitalProfileDialog').close());
+$('#hospitalProfileDialog').addEventListener('click', event => { if (event.target === $('#hospitalProfileDialog')) $('#hospitalProfileDialog').close(); });
+$('#hospitalProfileContent').addEventListener('click', event => {
+  const button = event.target.closest('[data-profile-book]');
+  if (!button) return;
+  const id = button.dataset.profileBook;
+  $('#hospitalProfileDialog').close();
+  openAppointment(id);
 });
 $('#closeAppointment').addEventListener('click', () => $('#appointmentDialog').close());
 $('#appointmentDialog').addEventListener('click', event => { if (event.target === $('#appointmentDialog')) $('#appointmentDialog').close(); });
@@ -431,9 +576,15 @@ $('#appointmentForm').addEventListener('submit', async event => {
     $('#appointmentDialog').close();
     $('#appointmentTrackForm').elements.code.value = result.appointment.id;
     await trackAppointment(result.appointment.id);
-    $('#appointmentTrackResult').insertAdjacentHTML('afterbegin', `<div class="tracking-code-note">Request code <code>${escapeHtml(result.appointment.id)}</code> · save this code to check status.</div>`);
+    const appointmentUrl = new URL('/', window.location.origin);
+    appointmentUrl.searchParams.set('appointment', result.appointment.id);
+    appointmentUrl.hash = 'track-request';
+    let qrImage = '';
+    try { qrImage = MedEraQR.toCanvas(appointmentUrl.toString(), 6).toDataURL('image/png'); } catch { /* The appointment code remains usable if the link is too long for a QR. */ }
+    const localOnly = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+    $('#appointmentTrackResult').insertAdjacentHTML('afterbegin', `<section class="appointment-confirmation"><div class="appointment-confirmation-copy"><span class="form-step">REQUEST SENT</span><h3>Save your appointment details</h3><p class="appointment-code-label">Appointment code</p><code class="appointment-code">${escapeHtml(result.appointment.id)}</code><p>Scan this QR to reopen MedEra with the code entered in request tracking.</p><p class="appointment-private-note">Keep this code and QR private; they open this request.</p>${localOnly ? '<p class="appointment-local-note">This local build can open the QR on this computer. Scanning from a phone requires MedEra to be hosted at a network address.</p>' : ''}${qrImage ? '' : '<p class="appointment-local-note">The request code is saved above, but this link was too long to fit in a QR image.</p>'}</div>${qrImage ? `<div class="appointment-qr-wrap"><img class="appointment-qr" src="${qrImage}" alt="QR code to reopen this appointment in MedEra"><a class="appointment-qr-download" href="${qrImage}" download="medera-appointment-${escapeHtml(result.appointment.id)}.png">Download QR image</a></div>` : ''}</section>`);
     $('#track-request').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    showToast('Appointment request sent. The hospital must confirm your visit.');
+    showToast('Appointment sent. Save the code or QR image; the hospital must confirm your visit.');
   } catch (error) { showFormMessage(form, error.message, true); }
   finally { button.disabled = false; }
 });
@@ -504,13 +655,14 @@ $('#emergencyTrackResult').addEventListener('click', async event => {
 });
 
 $$('[data-auth-tab]').forEach(button => button.addEventListener('click', () => setAuthTab(button.dataset.authTab)));
+$$('[data-captcha-refresh]').forEach(button => button.addEventListener('click', () => refreshCaptcha(button.closest('form'), button)));
 $('#loginForm').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
   const button = $('button[type="submit"]', form); button.disabled = true;
   showFormMessage(form, 'Signing in…');
   try { await establishSession(await api('/api/login', { method: 'POST', data: formData(form) })); form.reset(); showFormMessage(form, ''); }
-  catch (error) { showFormMessage(form, error.message, true); }
+  catch (error) { showFormMessage(form, error.message, true); await refreshCaptcha(form); }
   finally { button.disabled = false; }
 });
 $('#registerForm').addEventListener('submit', async event => {
@@ -519,7 +671,7 @@ $('#registerForm').addEventListener('submit', async event => {
   const button = $('button[type="submit"]', form); button.disabled = true;
   showFormMessage(form, 'Creating your account…');
   try { await establishSession(await api('/api/register', { method: 'POST', data: formData(form) })); form.reset(); showFormMessage(form, ''); }
-  catch (error) { showFormMessage(form, error.message, true); }
+  catch (error) { showFormMessage(form, error.message, true); await refreshCaptcha(form); }
   finally { button.disabled = false; }
 });
 $('#profileForm').addEventListener('submit', async event => {
@@ -547,5 +699,16 @@ $('#emergencyInbox').addEventListener('click', async event => {
   catch (error) { button.disabled = false; showToast(error.message, true); }
 });
 
+updateSiteClock();
+setInterval(updateSiteClock, 15000);
+setInterval(rotateHealthTip, 14000);
+refreshCaptcha($('#loginForm'));
+refreshCaptcha($('#registerForm'));
 if (state.staffToken) showDashboard();
 loadHospitals();
+const sharedAppointmentCode = new URLSearchParams(window.location.search).get('appointment');
+if (sharedAppointmentCode) {
+  $('#appointmentCode').value = sharedAppointmentCode;
+  trackAppointment(sharedAppointmentCode);
+  $('#track-request').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}

@@ -47,7 +47,11 @@ std::unordered_map<std::string, std::vector<std::string>> cityIndex;
 static std::unordered_map<std::string, std::string> sessions;
 static std::mutex dataMutex;
 static std::mutex sessionMutex;
+struct CaptchaChallenge { int answer; std::chrono::steady_clock::time_point expiresAt; };
+static std::unordered_map<std::string, CaptchaChallenge> captchaChallenges;
+static std::mutex captchaMutex;
 static int serverPort = 8080;
+static const std::string HOSPITAL_COMMISSION_CODE = "admin222";
 
 using medera::constantTimeEqual;
 using medera::makePasswordHash;
@@ -143,6 +147,42 @@ double numberParam(const std::map<std::string, std::string>& values, const std::
 int intParam(const std::map<std::string, std::string>& values, const std::string& key, int fallback = 0) {
     const double value = numberParam(values, key, fallback);
     return value >= static_cast<double>(std::numeric_limits<int>::min()) && value <= static_cast<double>(std::numeric_limits<int>::max()) ? static_cast<int>(value) : fallback;
+}
+std::string createCaptcha() {
+    const auto seed = randomHex(4);
+    int left = 1 + static_cast<int>(std::stoul(seed.substr(0,2),nullptr,16)%9);
+    int right = 1 + static_cast<int>(std::stoul(seed.substr(2,2),nullptr,16)%9);
+    const bool subtract = (std::stoi(seed.substr(0,1),nullptr,16)&1)!=0;
+    if (subtract && right>left) std::swap(left,right);
+    const std::string operation = subtract ? " − " : " + ";
+    const int answer = subtract ? left-right : left+right;
+    const auto id = randomHex(16);
+    {
+        std::lock_guard<std::mutex> lock(captchaMutex);
+        const auto now = std::chrono::steady_clock::now();
+        for (auto it=captchaChallenges.begin(); it!=captchaChallenges.end();) {
+            if (it->second.expiresAt<=now) it=captchaChallenges.erase(it); else ++it;
+        }
+        if (captchaChallenges.size()>=5000) captchaChallenges.clear();
+        captchaChallenges[id]={answer,now+std::chrono::minutes(5)};
+    }
+    return "{\"id\":"+jsonString(id)+",\"question\":"+jsonString("Solve this check: "+std::to_string(left)+operation+std::to_string(right))+"}";
+}
+bool consumeCaptcha(const std::map<std::string,std::string>& values) {
+    const auto id=param(values,"captchaId"), answerText=param(values,"captchaAnswer");
+    if (id.empty()||answerText.empty()) return false;
+    int submitted=0;
+    try {
+        std::size_t used=0;
+        submitted=std::stoi(answerText,&used);
+        if (used!=answerText.size()) return false;
+    } catch (...) { return false; }
+    std::lock_guard<std::mutex> lock(captchaMutex);
+    const auto found=captchaChallenges.find(id);
+    if (found==captchaChallenges.end()) return false;
+    const auto challenge=found->second;
+    captchaChallenges.erase(found);
+    return challenge.expiresAt>std::chrono::steady_clock::now()&&submitted==challenge.answer;
 }
 std::string encodeField(const std::string& value) {
     static const char* digits = "0123456789ABCDEF";
@@ -467,6 +507,7 @@ std::string api(const Request& request) {
     const std::string& path=request.path;
 
     if (request.method=="GET" && path=="/api/health") return "{\"ok\":true,\"service\":\"MedEra\",\"version\":\"1.0\"}";
+    if (request.method=="GET" && path=="/api/captcha") return createCaptcha();
     if (request.method=="GET" && path=="/api/hospitals") {
         const auto city=param(query,"city"), area=param(query,"area"), department=param(query,"department");
         const bool beds=param(query,"beds")=="1";
@@ -486,6 +527,8 @@ std::string api(const Request& request) {
     }
     if (request.method=="POST" && path=="/api/register") {
         const auto name=param(body,"name"), city=param(body,"city"), area=param(body,"area"), email=lower(param(body,"email")), phone=param(body,"phone"), password=param(body,"password");
+        if (!consumeCaptcha(body)) return safeError("CAPTCHA answer was incorrect or expired. Solve the refreshed check and try again.");
+        if (!constantTimeEqual(param(body,"licenseCode"),HOSPITAL_COMMISSION_CODE)) return safeError("The Health Commission code is incorrect.");
         const bool hasLatitude=!param(body,"latitude").empty(), hasLongitude=!param(body,"longitude").empty();
         const double latitude=numberParam(body,"latitude",std::numeric_limits<double>::quiet_NaN());
         const double longitude=numberParam(body,"longitude",std::numeric_limits<double>::quiet_NaN());
@@ -504,6 +547,8 @@ std::string api(const Request& request) {
     }
     if (request.method=="POST" && path=="/api/login") {
         const auto email=lower(param(body,"email")), password=param(body,"password");
+        if (!consumeCaptcha(body)) return safeError("CAPTCHA answer was incorrect or expired. Solve the refreshed check and try again.");
+        if (!constantTimeEqual(param(body,"licenseCode"),HOSPITAL_COMMISSION_CODE)) return safeError("The Health Commission code is incorrect.");
         const auto a=std::find_if(accounts.begin(),accounts.end(),[&](const Account& item){return item.email==email;});
         if (a==accounts.end()) return safeError("Email or password is incorrect.");
         if (!constantTimeEqual(makePasswordHash(password,a->salt),a->passwordHash)) return safeError("Email or password is incorrect.");
@@ -670,7 +715,7 @@ void sendResponse(SOCKET socket, int status, const std::string& contentType, con
     head << "HTTP/1.1 " << status << ' ' << statusText << "\r\nContent-Type: " << contentType
          << "\r\nContent-Length: " << body.size() << "\r\nConnection: close\r\nCache-Control: no-store\r\n"
          << "X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n"
-         << "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'\r\n\r\n";
+         << "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'\r\n\r\n";
     const std::string response=head.str()+body;
     std::size_t sent=0;
     while (sent<response.size()) { const int n=send(socket,response.data()+sent,static_cast<int>(response.size()-sent),0); if (n<=0) break; sent+=static_cast<std::size_t>(n); }

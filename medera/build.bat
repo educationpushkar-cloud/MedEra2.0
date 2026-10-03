@@ -12,4 +12,5 @@ g++ -std=c++17 -O2 -static -static-libgcc -static-libstdc++ -Wall -Wextra -Wpeda
 if errorlevel 1 exit /b 1
 echo.
 echo Built %OUTPUT_NAME%
-echo Run it from this folder, then open http://127.0.0.1:8091
+echo Run it from this folder: %OUTPUT_NAME% [port]
+echo Open http://127.0.0.1:8080, or use your chosen port.
