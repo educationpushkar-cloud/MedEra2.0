@@ -1,0 +1,13 @@
+@echo off
+setlocal
+cd /d "%~dp0"
+where g++ >nul 2>nul
+if errorlevel 1 (
+  echo g++ was not found. Install MinGW-w64 UCRT64 and add its bin folder to PATH.
+  exit /b 1
+)
+g++ -std=c++17 -O2 -static -static-libgcc -static-libstdc++ -Wall -Wextra -Wpedantic -Iinclude src\main.cpp src\security.cpp src\ranking.cpp -o medera.exe -lws2_32 -lbcrypt -lcrypt32
+if errorlevel 1 exit /b 1
+echo.
+echo Built medera.exe
+echo Run it from this folder, then open http://127.0.0.1:8080

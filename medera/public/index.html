@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="Find nearby hospitals, compare current availability, and request care through MedEra.">
+  <title>MedEra — Find care nearby</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="MedEra home">
+      <span class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span>medera</span>
+    </a>
+    <nav class="top-nav" aria-label="Explore MedEra">
+      <button type="button" class="nav-category active" data-top-category="all"><span class="nav-icon nav-icon-grid" aria-hidden="true">▦</span>All care</button>
+      <button type="button" class="nav-category" data-top-category="specialties"><span class="nav-icon" aria-hidden="true">✚</span>Specialties</button>
+      <button type="button" class="nav-category nav-emergency-link" data-top-category="emergency"><span class="nav-icon" aria-hidden="true">↗</span>Emergency</button>
+    </nav>
+    <div class="top-actions">
+      <button type="button" class="text-action" id="navStaffButton">For hospitals</button>
+      <button type="button" class="requests-button" id="navTrackButton"><span class="requests-icon" aria-hidden="true">▤</span><span>Track a request</span></button>
+      <button type="button" class="emergency-button" id="emergencyNavButton"><span aria-hidden="true">!</span> Urgent help</button>
+    </div>
+  </header>
+
+  <section class="search-region" aria-label="Hospital search">
+    <div class="search-tabs" role="tablist" aria-label="Search type">
+      <button class="search-tab active" type="button" role="tab" aria-selected="true" data-search-tab="all">All hospitals</button>
+      <button class="search-tab" type="button" role="tab" aria-selected="false" data-search-tab="emergency">Emergency-ready</button>
+    </div>
+    <form class="search-pill" id="searchForm">
+      <div class="search-segment where-segment">
+        <label class="segment-copy" for="searchCity"><span>Where</span><input id="searchCity" name="city" autocomplete="address-level2" placeholder="City or neighbourhood"></label>
+        <span class="where-divider" aria-hidden="true"></span>
+        <label class="segment-copy locality-copy" for="searchArea"><span>Area</span><input id="searchArea" name="area" placeholder="Any area"></label>
+        <button class="locate-button" type="button" id="useLocationButton" aria-label="Use my location" title="Use my location"><span aria-hidden="true">◎</span></button>
+      </div>
+      <div class="segment-divider" aria-hidden="true"></div>
+      <label class="search-segment specialty-segment"><span>Specialty</span><select id="searchDepartment" name="department"><option value="">Any department</option><option>Cardiology</option><option>Emergency medicine</option><option>General medicine</option><option>Gynecology</option><option>Neurology</option><option>Orthopedics</option><option>Pediatrics</option><option>Trauma care</option></select></label>
+      <div class="segment-divider availability-divider" aria-hidden="true"></div>
+      <label class="search-segment availability-segment"><span>Availability</span><span class="availability-control"><input type="checkbox" id="bedsOnly"><span class="availability-check" aria-hidden="true"></span><span>Open beds</span></span></label>
+      <button class="search-submit" type="submit" aria-label="Search hospitals"><span class="search-glass" aria-hidden="true"></span></button>
+    </form>
+    <p class="location-status" id="locationStatus" aria-live="polite">Search by city or use your location to rank nearby hospitals.</p>
+  </section>
+
+  <main>
+    <section class="specialty-rail" aria-label="Popular specialties">
+      <div class="specialty-scroll" id="categoryChips">
+        <button class="specialty-chip active" type="button" data-department=""><span class="chip-icon">⌖</span><span>All</span></button>
+        <button class="specialty-chip" type="button" data-department="Cardiology"><span class="chip-icon chip-red">♡</span><span>Cardiology</span></button>
+        <button class="specialty-chip" type="button" data-department="Pediatrics"><span class="chip-icon chip-yellow">✳</span><span>Pediatrics</span></button>
+        <button class="specialty-chip" type="button" data-department="Orthopedics"><span class="chip-icon chip-blue">⌁</span><span>Orthopedics</span></button>
+        <button class="specialty-chip" type="button" data-department="Gynecology"><span class="chip-icon chip-pink">✿</span><span>Gynecology</span></button>
+        <button class="specialty-chip" type="button" data-department="Neurology"><span class="chip-icon chip-purple">◉</span><span>Neurology</span></button>
+        <button class="specialty-chip" type="button" data-department="Trauma care"><span class="chip-icon chip-orange">✚</span><span>Trauma care</span></button>
+        <button class="specialty-chip" type="button" data-department="Emergency medicine"><span class="chip-icon chip-red">!</span><span>Emergency</span></button>
+      </div>
+      <button class="filter-button" type="button" id="filterButton"><span aria-hidden="true">☷</span> Filters</button>
+    </section>
+
+    <section class="emergency-banner" aria-label="Emergency help">
+      <div class="banner-icon" aria-hidden="true">+</div>
+      <div class="banner-copy"><strong>Need urgent hospital support?</strong><span>Send a request to a nearby hospital with live bed and ambulance availability.</span></div>
+      <span class="banner-safety">For immediate danger, call local emergency services first.</span>
+      <button type="button" class="banner-button" id="openEmergencyButton">Request a callback <span aria-hidden="true">↗</span></button>
+    </section>
+
+    <section class="directory-section" id="hospital-search">
+      <div class="directory-heading">
+        <div><h1 id="resultsTitle">Hospitals to know near you</h1><p class="directory-subtitle" id="directorySubtitle">Compare hospital-managed details and contact the care team directly.</p></div>
+        <div class="directory-controls">
+          <label class="sort-control"><span>Sort by</span><select id="searchSort"><option value="recommended">Recommended</option><option value="distance">Nearest</option><option value="rating">Top rated</option><option value="beds">Most beds</option></select></label>
+          <div class="view-switch" role="group" aria-label="Results view"><button type="button" id="listViewButton" class="view-option active" aria-pressed="true" title="List view">▦ <span>List</span></button><button type="button" id="mapViewButton" class="view-option" aria-pressed="false" title="Map view">⌖ <span>Map</span></button></div>
+        </div>
+      </div>
+      <div class="results-meta"><span id="resultsCount"></span><span class="live-label"><i></i> Capacity updated by each hospital</span></div>
+      <div class="hospital-grid" id="hospitalResults" aria-live="polite"></div>
+      <div class="map-view" id="mapView" hidden>
+        <div class="map-panel"><div class="map-topline"><span>Relative hospital locations</span><span class="map-key"><i></i> Hospitals <b></b> Your location</span></div><div class="map-plot" id="mapPlot"></div><p class="map-disclaimer">Approximate relative positions from hospital coordinates, not a road map. Use directions from your maps app.</p></div>
+        <aside class="map-results"><h2>In this area</h2><div id="mapHospitalList"></div></aside>
+      </div>
+      <div class="empty-state" id="emptyState" hidden>
+        <div class="empty-art" aria-hidden="true"><span>+</span><i></i><b></b></div>
+        <h2>No hospitals listed in this search yet</h2>
+        <p>Hospital teams add and update directory listings. Try another city or invite a hospital to join.</p>
+        <button class="text-action empty-action" type="button" id="emptyRegisterButton">Add a hospital listing <span aria-hidden="true">↗</span></button>
+      </div>
+    </section>
+
+    <section class="track-section" id="track-request">
+      <div class="track-heading"><span class="track-heading-icon" aria-hidden="true">▤</span><div><h2>Already sent a request?</h2><p>Use the code from your confirmation to see the latest update.</p></div></div>
+      <div class="track-panels">
+        <form class="track-form" id="appointmentTrackForm"><label for="appointmentCode"><span>Appointment request</span><small>Appointment code</small></label><div class="track-input-wrap"><input id="appointmentCode" name="code" required maxlength="40" placeholder="Enter your code"><button type="submit" aria-label="Track appointment">→</button></div><div class="track-result" id="appointmentTrackResult" aria-live="polite"></div></form>
+        <form class="track-form" id="emergencyTrackForm"><label for="emergencyCode"><span>Emergency request</span><small>Private tracking code</small></label><div class="track-input-wrap"><input id="emergencyCode" name="code" required maxlength="64" placeholder="Enter your private code"><button type="submit" aria-label="Track emergency request">→</button></div><div class="track-result" id="emergencyTrackResult" aria-live="polite"></div></form>
+      </div>
+    </section>
+
+    <section class="host-cta"><div class="host-cta-inner"><div><span class="eyebrow">FOR HOSPITAL TEAMS</span><h2>Help people find the care you provide.</h2><p>Keep your details current and manage requests in a simple staff workspace.</p></div><button type="button" id="hostCtaButton" class="host-cta-button">List your hospital <span aria-hidden="true">↗</span></button></div></section>
+  </main>
+
+  <dialog class="request-dialog" id="emergencyDialog">
+    <button class="dialog-close" type="button" id="closeEmergency" aria-label="Close">×</button>
+    <div class="dialog-symbol urgent-symbol" aria-hidden="true">+</div><p class="dialog-kicker">EMERGENCY COORDINATION</p><h2>Request a hospital callback.</h2>
+    <p class="dialog-safety"><strong>If someone is in immediate danger, call your local emergency services now.</strong> MedEra does not provide medical advice or dispatch an ambulance automatically.</p>
+    <form class="urgent-form" id="emergencyForm">
+      <label class="field"><span>Your name</span><input name="patientName" autocomplete="name" required maxlength="100" placeholder="Name of the person needing help"></label>
+      <div class="field-row"><label class="field"><span>Phone number</span><input name="phone" autocomplete="tel" required maxlength="32" placeholder="A number the hospital can call"></label><label class="field"><span>City</span><input name="city" required maxlength="100" placeholder="City"></label></div>
+      <label class="field"><span>Locality <small>optional</small></span><input name="area" maxlength="100" placeholder="Nearest area or landmark"></label>
+      <label class="field"><span>Brief details <small>optional</small></span><textarea name="symptoms" rows="2" maxlength="500" placeholder="Help the hospital prepare for your callback"></textarea></label>
+      <div class="emergency-location-row"><button class="location-share" type="button" id="emergencyLocationButton"><span aria-hidden="true">◎</span> Share my location</button><span id="emergencyLocationStatus" aria-live="polite">Location helps rank nearby hospitals.</span></div>
+      <input type="hidden" name="latitude"><input type="hidden" name="longitude">
+      <button class="button urgent-submit" type="submit">Send request <span aria-hidden="true">↗</span></button>
+      <p class="dialog-fineprint">The request goes to a hospital inbox. This service does not call emergency services or dispatch an ambulance.</p>
+    </form>
+  </dialog>
+
+  <dialog class="request-dialog appointment-dialog" id="appointmentDialog">
+    <button class="dialog-close" type="button" id="closeAppointment" aria-label="Close">×</button>
+    <div class="dialog-symbol" aria-hidden="true">✚</div><p class="dialog-kicker">APPOINTMENT REQUEST</p><h2>Start with a conversation.</h2><p class="dialog-hospital" id="dialogHospitalName"></p>
+    <form id="appointmentForm">
+      <input type="hidden" name="hospitalId">
+      <label class="field"><span>Your name</span><input name="patientName" required maxlength="100" autocomplete="name"></label>
+      <div class="field-row"><label class="field"><span>Phone number</span><input name="phone" required maxlength="32" autocomplete="tel"></label><label class="field"><span>Email <small>optional</small></span><input name="email" type="email" maxlength="254" autocomplete="email"></label></div>
+      <div class="field-row"><label class="field"><span>Department</span><select name="department" required></select></label><label class="field"><span>Doctor <small>optional</small></span><select name="doctor"><option value="">No preference</option></select></label></div>
+      <div class="field-row"><label class="field"><span>Preferred date</span><input type="date" name="date" required></label><label class="field"><span>Preferred time</span><input type="time" name="time" required></label></div>
+      <label class="field"><span>Note for the hospital <small>optional</small></span><textarea name="notes" rows="3" maxlength="500" placeholder="Share anything the team should know before calling"></textarea></label>
+      <p class="dialog-fineprint">This sends an appointment request. Your visit is not booked until the hospital confirms it.</p>
+      <button class="button appointment-submit" type="submit">Send appointment request <span aria-hidden="true">↗</span></button><p class="form-message" aria-live="polite"></p>
+    </form>
+  </dialog>
+
+  <dialog class="staff-dialog" id="staffDialog">
+    <button class="dialog-close" type="button" id="closeStaff" aria-label="Close">×</button>
+    <section class="hospital-section" id="hospital-portal">
+      <div class="hospital-intro"><span class="eyebrow">MEDERA PARTNER PORTAL</span><h2>Your hospital.<br>Your information.</h2><p>Manage your listing, update availability, and respond to requests from one workspace.</p><p class="hospital-data-note">Listings are hospital-managed and not independently verified. Patients are asked to confirm availability by phone.</p></div>
+      <div class="portal-card" id="portalCard">
+        <div class="auth-view" id="authView">
+          <div class="portal-tabs" role="tablist" aria-label="Hospital account"><button class="portal-tab active" type="button" role="tab" aria-selected="true" data-auth-tab="login">Staff sign in</button><button class="portal-tab" type="button" role="tab" aria-selected="false" data-auth-tab="register">Register hospital</button></div>
+          <form class="auth-form" id="loginForm"><div class="form-heading"><div><span class="form-step">STAFF PORTAL</span><h3>Welcome back.</h3></div></div><label class="field"><span>Staff email</span><input type="email" name="email" autocomplete="username" required maxlength="254" placeholder="you@hospital.org"></label><label class="field"><span>Password</span><input type="password" name="password" autocomplete="current-password" required maxlength="128" placeholder="Your password"></label><button class="button button-dark button-wide" type="submit">Sign in <span aria-hidden="true">↗</span></button><p class="form-message" aria-live="polite"></p></form>
+          <form class="auth-form" id="registerForm" hidden><div class="form-heading"><div><span class="form-step">NEW LISTING</span><h3>Join the directory.</h3></div></div><label class="field"><span>Hospital name</span><input name="name" required minlength="2" maxlength="120" placeholder="Official hospital name"></label><div class="field-row"><label class="field"><span>City</span><input name="city" required maxlength="100" placeholder="City"></label><label class="field"><span>Locality</span><input name="area" required maxlength="100" placeholder="Area"></label></div><label class="field"><span>Hospital contact number</span><input name="phone" required maxlength="32" placeholder="A number patients can call"></label><label class="field"><span>Staff email</span><input type="email" name="email" autocomplete="email" required maxlength="254" placeholder="you@hospital.org"></label><label class="field"><span>Create password <small>12 characters minimum</small></span><input type="password" name="password" autocomplete="new-password" required minlength="12" maxlength="128" placeholder="Use a unique password"></label><button class="button button-dark button-wide" type="submit">Create hospital account <span aria-hidden="true">↗</span></button><p class="form-message" aria-live="polite"></p><p class="form-footnote">Complete your facility details in the staff workspace before patients rely on the listing.</p></form>
+        </div>
+        <div class="dashboard-view" id="dashboardView" hidden>
+          <div class="dashboard-top"><div><span class="form-step">STAFF WORKSPACE</span><h3 id="dashboardName">Hospital</h3><span class="account-label" id="dashboardEmail"></span></div><button class="button button-small button-outline" id="logoutButton" type="button">Sign out</button></div>
+          <div class="dashboard-stats"><div><strong id="statBeds">—</strong><span>open beds</span></div><div><strong id="statAmbulances">—</strong><span>ambulances</span></div><div><strong id="statAppointments">0</strong><span>appointment requests</span></div><div><strong id="statEmergencies">0</strong><span>open emergency requests</span></div></div>
+          <form class="profile-form" id="profileForm"><div class="dashboard-section-title"><div><span class="form-step">DIRECTORY DETAILS</span><h4>Keep your listing current</h4></div><span class="edit-note">Changes appear in search</span></div><label class="field"><span>Hospital name</span><input name="name" required maxlength="120"></label><div class="field-row"><label class="field"><span>City</span><input name="city" required maxlength="100"></label><label class="field"><span>Locality</span><input name="area" required maxlength="100"></label></div><label class="field"><span>Address</span><input name="address" required maxlength="240" placeholder="Street address and landmark"></label><label class="field"><span>Public phone</span><input name="phone" required maxlength="32"></label><label class="field"><span>Departments <small>comma separated</small></span><input name="departments" placeholder="Cardiology, Pediatrics, Orthopedics"></label><label class="field"><span>Doctors <small>comma separated</small></span><input name="doctors" placeholder="Dr. A. Sharma, Dr. N. Khan"></label><div class="field-row"><label class="field"><span>Latitude</span><input type="number" name="latitude" min="-90" max="90" step="any" required placeholder="e.g. 30.3165"></label><label class="field"><span>Longitude</span><input type="number" name="longitude" min="-180" max="180" step="any" required placeholder="e.g. 78.0322"></label></div><div class="field-row four-fields"><label class="field"><span>Total beds</span><input type="number" name="totalBeds" min="0" step="1" required value="0"></label><label class="field"><span>Available</span><input type="number" name="availableBeds" min="0" step="1" required value="0"></label><label class="field"><span>Total ambulances</span><input type="number" name="totalAmbulances" min="0" step="1" required value="0"></label><label class="field"><span>Available</span><input type="number" name="availableAmbulances" min="0" step="1" required value="0"></label></div><button class="button button-dark button-wide" type="submit">Save directory details <span aria-hidden="true">↗</span></button><p class="form-message" aria-live="polite"></p></form>
+          <div class="dashboard-list-section"><div class="dashboard-section-title"><div><span class="form-step">INBOX</span><h4>Appointment requests</h4></div><button class="text-button" type="button" id="refreshDashboard">↻ Refresh</button></div><div class="inbox-list" id="appointmentInbox"></div></div>
+          <div class="dashboard-list-section"><div class="dashboard-section-title"><div><span class="form-step form-step-alert">URGENT</span><h4>Emergency requests</h4></div><span class="poll-label"><span></span> Refreshes every 15 seconds</span></div><div class="inbox-list" id="emergencyInbox"></div><p class="form-footnote">This workspace does not send SMS or phone notifications. Contact the patient promptly and confirm by phone before assigning an ambulance.</p></div>
+        </div>
+      </div>
+    </section>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <footer class="site-footer"><div class="footer-inner"><a class="brand footer-brand" href="/"><span class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></span><span>medera</span></a><span>Hospital-managed details · Confirm availability directly</span><span>Care, connected.</span></div></footer>
+</body>
+</html>
