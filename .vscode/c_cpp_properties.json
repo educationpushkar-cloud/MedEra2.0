@@ -1,0 +1,23 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "MedEra - MinGW UCRT64",
+      "compilerPath": "C:/msys64/ucrt64/bin/g++.exe",
+      "intelliSenseMode": "windows-gcc-x64",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "includePath": [
+        "${workspaceFolder}/medera/include",
+        "${workspaceFolder}/medera/src"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/medera/include",
+          "${workspaceFolder}/medera/src"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ]
+}
