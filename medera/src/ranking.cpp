@@ -14,7 +14,7 @@ std::string normalize(std::string value) {
 }
 
 } // namespace
-
+//this is done for case insensitive search of departments in the hospital
 bool containsCaseInsensitive(const std::string& values, const std::string& needle) {
     if (needle.empty()) return true;
     std::size_t start = 0;
