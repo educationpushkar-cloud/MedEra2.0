@@ -17,3 +17,5 @@ bool containsCaseInsensitive(const std::string& values, const std::string& needl
 std::vector<Ranked> rankHospitals(const std::string& city, const std::string& area, const std::string& department,
                                  bool requireBeds, bool requireAmbulance, bool hasLocation, double lat, double lon, int limit,
                                  const std::string& sortMode = "recommended");
+//"Add hospital ranking and location utility functions"
+//Implement Haversine distance and hospital filtering
