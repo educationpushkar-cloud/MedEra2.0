@@ -19,3 +19,5 @@ std::vector<Ranked> rankHospitals(const std::string& city, const std::string& ar
                                  const std::string& sortMode = "recommended");
 //"Add hospital ranking and location utility functions"
 //Implement Haversine distance and hospital filtering
+//Rank hospitals based on location, department and availability
+//Calculate geographical distance between two points , latitude and longitude
