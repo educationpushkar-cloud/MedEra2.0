@@ -233,6 +233,8 @@ std::string stringArray(const std::string& csv) {
     for (std::size_t i = 0; i < values.size(); ++i) { if (i) out += ','; out += jsonString(values[i]); }
     return out + "]";
 }
+
+//  added readline function to load stoared file records line by line
 std::vector<std::string> readLines(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
     std::vector<std::string> result;
@@ -252,6 +254,7 @@ std::vector<std::string> readLines(const fs::path& path) {
     while (std::getline(lines, line)) { if (!line.empty() && line.back() == '\r') line.pop_back(); if (!line.empty()) result.push_back(line); }
     return result;
 }
+// 
 void saveLines(const fs::path& path, const std::vector<std::string>& lines) {
     fs::create_directories(path.parent_path());
     const std::string temporary = path.string() + ".tmp";
