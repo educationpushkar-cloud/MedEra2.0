@@ -254,7 +254,7 @@ std::vector<std::string> readLines(const fs::path& path) {
     while (std::getline(lines, line)) { if (!line.empty() && line.back() == '\r') line.pop_back(); if (!line.empty()) result.push_back(line); }
     return result;
 }
-// 
+// added to save line functionn to write updated data back to storage file done by by madhave varshney
 void saveLines(const fs::path& path, const std::vector<std::string>& lines) {
     fs::create_directories(path.parent_path());
     const std::string temporary = path.string() + ".tmp";
