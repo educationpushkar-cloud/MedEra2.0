@@ -25,7 +25,7 @@ std::string randomHex(std::size_t bytes) {
     }
     return result;
 }
-
+//implemented mypasswordhash function for secure user password hashing 
 std::string makePasswordHash(const std::string& password, const std::string& saltHex) {
     std::vector<unsigned char> salt;
     for (std::size_t i = 0; i + 1 < saltHex.size(); i += 2) {
