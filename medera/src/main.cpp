@@ -233,6 +233,8 @@ std::string stringArray(const std::string& csv) {
     for (std::size_t i = 0; i < values.size(); ++i) { if (i) out += ','; out += jsonString(values[i]); }
     return out + "]";
 }
+
+//  added readline function to load stoared file records line by line
 std::vector<std::string> readLines(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
     std::vector<std::string> result;
@@ -252,6 +254,7 @@ std::vector<std::string> readLines(const fs::path& path) {
     while (std::getline(lines, line)) { if (!line.empty() && line.back() == '\r') line.pop_back(); if (!line.empty()) result.push_back(line); }
     return result;
 }
+// added to save line functionn to write updated data back to storage file done by by madhave varshney
 void saveLines(const fs::path& path, const std::vector<std::string>& lines) {
     fs::create_directories(path.parent_path());
     const std::string temporary = path.string() + ".tmp";
@@ -708,6 +711,15 @@ std::string api(const Request& request) {
     return safeError("API route not found.");
 }
 
+/*
+ * Reads an incoming HTTP request from a client socket.
+ * It receives data until the HTTP headers are complete, then extracts
+ * the request method, URL path, query string, and headers.
+ * It uses the Content-Length header to determine how much request body
+ * data to read and stores the extracted information in the Request object.
+ * It rejects malformed or oversized requests and returns true when
+ * the request is read successfully, otherwise false.
+ */
 bool readRequest(SOCKET socket, Request& request) {
     std::string buffer; std::array<char,4096> chunk{};
     std::size_t headerEnd=std::string::npos;
@@ -738,6 +750,14 @@ bool readRequest(SOCKET socket, Request& request) {
     request.body=buffer.substr(bodyStart,length);
     return true;
 }
+/*
+ * Sends an HTTP response from the server to the client through a socket.
+ * It builds the status line and response headers, including content type,
+ * content length, connection settings, and security-related headers.
+ * It appends the response body and uses send() in a loop to handle
+ * partial writes until all response data is sent or an error occurs.
+ * The caller is responsible for shutting down and closing the socket.
+ */
 void sendResponse(SOCKET socket, int status, const std::string& contentType, const std::string& body) {
     const char* statusText=status==200?"OK":status==400?"Bad Request":status==403?"Forbidden":status==404?"Not Found":status==405?"Method Not Allowed":"Internal Server Error";
     std::ostringstream head;
