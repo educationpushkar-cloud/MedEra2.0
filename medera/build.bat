@@ -13,4 +13,4 @@ if errorlevel 1 exit /b 1
 echo.
 echo Built %OUTPUT_NAME%
 echo Run it from this folder: %OUTPUT_NAME% [port]
-echo Open http://127.0.0.1:8080, or use your chosen port.
+echo Open http://127.0.0.1:8096, or use your chosen port.
