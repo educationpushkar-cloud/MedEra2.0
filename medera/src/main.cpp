@@ -10,16 +10,16 @@
 #include <chrono>
 #include <cmath>
 #include <cctype>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <mutex>
-#include <queue>
-#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -51,12 +51,13 @@ struct CaptchaChallenge { int answer; std::chrono::steady_clock::time_point expi
 static std::unordered_map<std::string, CaptchaChallenge> captchaChallenges;
 static std::mutex captchaMutex;
 static int serverPort = 8080;
-static const std::string HOSPITAL_COMMISSION_CODE = "admin222";
+static std::string commissionAccessCode;
 
 using medera::constantTimeEqual;
 using medera::makePasswordHash;
 using medera::randomHex;
 
+// Text, query, form, and JSON helpers.
 std::string lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return value;
@@ -100,29 +101,42 @@ std::string jsonNumber(double value) {
     if (!std::isfinite(value)) return "null";
     std::ostringstream out; out << std::fixed << std::setprecision(6) << value; return out.str();
 }
-std::string urlDecode(const std::string& value) {
+int hexNibble(char value) {
+    if (value >= '0' && value <= '9') return value - '0';
+    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+    if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+    return -1;
+}
+std::string percentDecode(const std::string& value, bool plusAsSpace, bool strict) {
     std::string result;
     result.reserve(value.size());
     for (std::size_t i = 0; i < value.size(); ++i) {
-        if (value[i] == '+') result.push_back(' ');
-        else if (value[i] == '%' && i + 2 < value.size()) {
-            const auto hex = value.substr(i + 1, 2);
-            try { result.push_back(static_cast<char>(std::stoul(hex, nullptr, 16))); i += 2; }
-            catch (...) { result.push_back(value[i]); }
-        } else result.push_back(value[i]);
+        if (plusAsSpace && value[i] == '+') {
+            result.push_back(' ');
+        } else if (value[i] == '%') {
+            if (i + 2 >= value.size()) {
+                if (strict) throw std::invalid_argument("Malformed percent-encoded field.");
+                result.push_back(value[i]);
+                continue;
+            }
+            const int high = hexNibble(value[i + 1]);
+            const int low = hexNibble(value[i + 2]);
+            if (high < 0 || low < 0) {
+                if (strict) throw std::invalid_argument("Malformed percent-encoded field.");
+                result.push_back(value[i]);
+                continue;
+            }
+            result.push_back(static_cast<char>((high << 4) | low));
+            i += 2;
+        } else {
+            result.push_back(value[i]);
+        }
     }
     return result;
 }
+std::string urlDecode(const std::string& value) { return percentDecode(value, true, true); }
 std::string decodeStoredField(const std::string& value) {
-    std::string result;
-    result.reserve(value.size());
-    for (std::size_t i = 0; i < value.size(); ++i) {
-        if (value[i] == '%' && i + 2 < value.size()) {
-            try { result.push_back(static_cast<char>(std::stoul(value.substr(i + 1, 2), nullptr, 16))); i += 2; }
-            catch (...) { result.push_back(value[i]); }
-        } else result.push_back(value[i]);
-    }
-    return result;
+    return percentDecode(value, false, false);
 }
 std::map<std::string, std::string> parseParams(const std::string& encoded) {
     std::map<std::string, std::string> result;
@@ -131,7 +145,12 @@ std::map<std::string, std::string> parseParams(const std::string& encoded) {
         const auto end = encoded.find('&', start);
         const auto part = encoded.substr(start, end == std::string::npos ? end : end - start);
         const auto equal = part.find('=');
-        if (!part.empty()) result[urlDecode(part.substr(0, equal))] = equal == std::string::npos ? "" : urlDecode(part.substr(equal + 1));
+        if (!part.empty()) {
+            const auto key=urlDecode(part.substr(0,equal));
+            if (key.empty() || result.find(key)!=result.end())
+                throw std::invalid_argument("Form fields must have unique, non-empty names.");
+            result.emplace(key,equal==std::string::npos?"":urlDecode(part.substr(equal+1)));
+        }
         if (end == std::string::npos) break;
         start = end + 1;
     }
@@ -163,7 +182,7 @@ std::string createCaptcha() {
         for (auto it=captchaChallenges.begin(); it!=captchaChallenges.end();) {
             if (it->second.expiresAt<=now) it=captchaChallenges.erase(it); else ++it;
         }
-        if (captchaChallenges.size()>=5000) captchaChallenges.clear();
+        if (captchaChallenges.size()>=5000) return "{\"error\":\"Too many active checks. Try again shortly.\"}";
         captchaChallenges[id]={answer,now+std::chrono::minutes(5)};
     }
     return "{\"id\":"+jsonString(id)+",\"question\":"+jsonString("Solve this check: "+std::to_string(left)+operation+std::to_string(right))+"}";
@@ -227,6 +246,7 @@ std::vector<std::string> splitValues(const std::string& text, char separator = '
     }
     return result;
 }
+
 std::string stringArray(const std::string& csv) {
     const auto values = splitValues(csv);
     std::string out = "[";
@@ -234,7 +254,7 @@ std::string stringArray(const std::string& csv) {
     return out + "]";
 }
 
-//  added readline function to load stoared file records line by line
+// Records are stored in DPAPI-protected files beside the executable.
 std::vector<std::string> readLines(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
     std::vector<std::string> result;
@@ -254,7 +274,6 @@ std::vector<std::string> readLines(const fs::path& path) {
     while (std::getline(lines, line)) { if (!line.empty() && line.back() == '\r') line.pop_back(); if (!line.empty()) result.push_back(line); }
     return result;
 }
-// added to save line functionn to write updated data back to storage file done by by madhave varshney
 void saveLines(const fs::path& path, const std::vector<std::string>& lines) {
     fs::create_directories(path.parent_path());
     const std::string temporary = path.string() + ".tmp";
@@ -279,6 +298,8 @@ void saveLines(const fs::path& path, const std::vector<std::string>& lines) {
         throw std::runtime_error("Unable to update data file: " + path.string());
     }
 }
+
+// Validate user-supplied profile and request fields before persistence.
 std::string csvList(const std::string& value) {
     auto items = splitValues(value);
     for (auto& item : items) {
@@ -326,7 +347,16 @@ std::string formBody(const Request& request) {
         throw std::runtime_error("Send form data as URL-encoded fields.");
     return request.body;
 }
+
+// API errors, access checks, and authentication helpers.
 std::string safeError(const std::string& message) { return "{\"error\":" + jsonString(message) + "}"; }
+std::string commissionCodeError(const std::string& submittedCode) {
+    if (commissionAccessCode.empty())
+        return "Hospital staff access is not configured. Set MEDERA_COMMISSION_CODE before starting MedEra.";
+    if (!constantTimeEqual(submittedCode, commissionAccessCode))
+        return "The Health Commission access code is incorrect.";
+    return {};
+}
 std::string authToken(const Request& request) {
     const auto it = request.headers.find("authorization");
     if (it == request.headers.end() || it->second.rfind("Bearer ", 0) != 0) return {};
@@ -339,6 +369,7 @@ std::string authorizeHospital(const Request& request) {
     const auto it = sessions.find(token);
     return it == sessions.end() ? std::string{} : it->second;
 }
+// In-memory record lookup and search indexes.
 Hospital* hospitalById(const std::string& id) {
     const auto it = std::find_if(hospitals.begin(), hospitals.end(), [&](const Hospital& h) { return h.id == id; });
     return it == hospitals.end() ? nullptr : &*it;
@@ -412,6 +443,8 @@ void saveEmergencies() {
     saveLines(DATA_DIR / "emergencies.db", lines);
 }
 double averageRating(const Hospital& h) { return h.ratingCount? h.ratingSum/h.ratingCount : 0; }
+
+// JSON serializers keep private patient details out of public tracking responses.
 std::string hospitalJson(const Hospital& h, double distance = -1, bool full = true) {
     std::ostringstream out;
     out << "{\"id\":" << jsonString(h.id) << ",\"name\":" << jsonString(h.name)
@@ -465,6 +498,8 @@ std::string emergencyJson(const Emergency& e, bool privateData) {
     if (privateData) out+=",\"patientName\":"+jsonString(e.patientName)+",\"phone\":"+jsonString(e.phone)+",\"symptoms\":"+jsonString(e.symptoms)+",\"latitude\":"+jsonNumber(e.latitude)+",\"longitude\":"+jsonNumber(e.longitude);
     return out+"}";
 }
+
+// Emergency workflow transitions, resource reservations, and fallback routing.
 std::string eventLabel(const std::string& status) {
     static const std::unordered_map<std::string,std::string> labels={
         {"hospital_notified","Hospital notified"},{"accepted","Hospital accepted; a bed was reserved"},
@@ -487,9 +522,6 @@ void releaseEmergencyReservations(Emergency& e) {
     }
     e.bedReserved=false; e.ambulanceReserved=false;
 }
-bool isTerminalEmergency(const std::string& status) {
-    return status=="completed" || status=="cancelled" || status=="no_hospital_available";
-}
 bool fallbackEmergency(Emergency& e, const std::string& reason) {
     releaseEmergencyReservations(e);
     const auto ids=splitValues(e.candidates);
@@ -505,6 +537,7 @@ bool fallbackEmergency(Emergency& e, const std::string& reason) {
     return false;
 }
 
+// API routes. api() serializes access to the in-memory records with dataMutex.
 std::string api(const Request& request) {
     std::lock_guard<std::mutex> lock(dataMutex);
     const auto query=parseParams(request.query);
@@ -533,7 +566,8 @@ std::string api(const Request& request) {
     if (request.method=="POST" && path=="/api/register") {
         const auto name=param(body,"name"), city=param(body,"city"), area=param(body,"area"), email=lower(param(body,"email")), phone=param(body,"phone"), password=param(body,"password");
         if (!consumeCaptcha(body)) return safeError("CAPTCHA answer was incorrect or expired. Solve the refreshed check and try again.");
-        if (!constantTimeEqual(param(body,"licenseCode"),HOSPITAL_COMMISSION_CODE)) return safeError("The Health Commission code is incorrect.");
+        const auto codeError=commissionCodeError(param(body,"licenseCode"));
+        if (!codeError.empty()) return safeError(codeError);
         const bool hasLatitude=!param(body,"latitude").empty(), hasLongitude=!param(body,"longitude").empty();
         const double latitude=numberParam(body,"latitude",std::numeric_limits<double>::quiet_NaN());
         const double longitude=numberParam(body,"longitude",std::numeric_limits<double>::quiet_NaN());
@@ -553,7 +587,8 @@ std::string api(const Request& request) {
     if (request.method=="POST" && path=="/api/login") {
         const auto email=lower(param(body,"email")), password=param(body,"password");
         if (!consumeCaptcha(body)) return safeError("CAPTCHA answer was incorrect or expired. Solve the refreshed check and try again.");
-        if (!constantTimeEqual(param(body,"licenseCode"),HOSPITAL_COMMISSION_CODE)) return safeError("The Health Commission code is incorrect.");
+        const auto codeError=commissionCodeError(param(body,"licenseCode"));
+        if (!codeError.empty()) return safeError(codeError);
         const auto a=std::find_if(accounts.begin(),accounts.end(),[&](const Account& item){return item.email==email;});
         if (a==accounts.end()) return safeError("Email or password is incorrect.");
         if (!constantTimeEqual(makePasswordHash(password,a->salt),a->passwordHash)) return safeError("Email or password is incorrect.");
@@ -564,7 +599,8 @@ std::string api(const Request& request) {
     if (request.method=="POST" && path=="/api/password/reset") {
         const auto email=lower(param(body,"email")), password=param(body,"newPassword"), confirmation=param(body,"confirmPassword");
         if (!consumeCaptcha(body)) return safeError("CAPTCHA answer was incorrect or expired. Solve the refreshed check and try again.");
-        if (!constantTimeEqual(param(body,"licenseCode"),HOSPITAL_COMMISSION_CODE)) return safeError("The Health Commission code is incorrect.");
+        const auto codeError=commissionCodeError(param(body,"licenseCode"));
+        if (!codeError.empty()) return safeError(codeError);
         if (!validEmail(email)) return safeError("Enter the staff email registered to this hospital account.");
         if (password.size()<12 || password.size()>128) return safeError("Use a new password between 12 and 128 characters.");
         if (password!=confirmation) return safeError("The new passwords do not match.");
@@ -711,15 +747,7 @@ std::string api(const Request& request) {
     return safeError("API route not found.");
 }
 
-/*
- * Reads an incoming HTTP request from a client socket.
- * It receives data until the HTTP headers are complete, then extracts
- * the request method, URL path, query string, and headers.
- * It uses the Content-Length header to determine how much request body
- * data to read and stores the extracted information in the Request object.
- * It rejects malformed or oversized requests and returns true when
- * the request is read successfully, otherwise false.
- */
+// HTTP transport: parse one bounded request and close the connection after one response.
 bool readRequest(SOCKET socket, Request& request) {
     std::string buffer; std::array<char,4096> chunk{};
     std::size_t headerEnd=std::string::npos;
@@ -731,18 +759,34 @@ bool readRequest(SOCKET socket, Request& request) {
     std::string line;
     if (!std::getline(headers,line)) return false;
     if (!line.empty()&&line.back()=='\r') line.pop_back();
-    std::istringstream first(line); first>>request.method;
-    std::string target; first>>target;
+    std::istringstream first(line);
+    std::string target, version, extra;
+    if (!(first >> request.method >> target >> version) || version != "HTTP/1.1" ||
+        target.empty() || target.front() != '/' || target.find('#') != std::string::npos || (first >> extra))
+        return false;
     const auto queryAt=target.find('?'); request.path=target.substr(0,queryAt); request.query=queryAt==std::string::npos?"":target.substr(queryAt+1);
     while (std::getline(headers,line)) {
         if (!line.empty()&&line.back()=='\r') line.pop_back();
-        const auto colon=line.find(':'); if (colon==std::string::npos) continue;
-        request.headers[lower(trim(line.substr(0,colon)))]=trim(line.substr(colon+1));
+        const auto colon=line.find(':'); if (colon==std::string::npos) return false;
+        const auto name=lower(trim(line.substr(0,colon)));
+        if (name.empty() || name.find_first_of(" \t") != std::string::npos || request.headers.find(name) != request.headers.end()) return false;
+        request.headers[name]=trim(line.substr(colon+1));
     }
+    const auto transferEncoding=request.headers.find("transfer-encoding");
+    if (transferEncoding!=request.headers.end() && !transferEncoding->second.empty()) return false;
     std::size_t length=0;
     const auto contentLength=request.headers.find("content-length");
-    if (contentLength!=request.headers.end()) { try { length=static_cast<std::size_t>(std::stoul(contentLength->second)); } catch (...) { return false; } }
-    if (length>65536) return false;
+    if (request.method=="POST" && contentLength==request.headers.end()) return false;
+    if (contentLength!=request.headers.end()) {
+        if (contentLength->second.empty() || !std::all_of(contentLength->second.begin(), contentLength->second.end(),
+                [](unsigned char c) { return std::isdigit(c); })) return false;
+        try {
+            std::size_t used=0;
+            const auto parsed=std::stoull(contentLength->second,&used);
+            if (used!=contentLength->second.size() || parsed>65536) return false;
+            length=static_cast<std::size_t>(parsed);
+        } catch (...) { return false; }
+    }
     const auto bodyStart=headerEnd+4;
     while (buffer.size()-bodyStart<length) {
         const int got=recv(socket,chunk.data(),static_cast<int>(chunk.size()),0); if (got<=0) return false; buffer.append(chunk.data(),got);
@@ -750,14 +794,6 @@ bool readRequest(SOCKET socket, Request& request) {
     request.body=buffer.substr(bodyStart,length);
     return true;
 }
-/*
- * Sends an HTTP response from the server to the client through a socket.
- * It builds the status line and response headers, including content type,
- * content length, connection settings, and security-related headers.
- * It appends the response body and uses send() in a loop to handle
- * partial writes until all response data is sent or an error occurs.
- * The caller is responsible for shutting down and closing the socket.
- */
 void sendResponse(SOCKET socket, int status, const std::string& contentType, const std::string& body) {
     const char* statusText=status==200?"OK":status==400?"Bad Request":status==403?"Forbidden":status==404?"Not Found":status==405?"Method Not Allowed":"Internal Server Error";
     std::ostringstream head;
@@ -797,7 +833,8 @@ void handleClient(SOCKET client) {
             sendResponse(client,200,type,content.str());
         } else sendResponse(client,405,"text/plain; charset=utf-8","Method not allowed");
     } catch (const std::exception& error) {
-        sendResponse(client,400,"application/json; charset=utf-8",safeError(error.what()));
+        std::cerr << "Request handling failed: " << error.what() << '\n';
+        sendResponse(client,400,"application/json; charset=utf-8",safeError("The request could not be completed."));
     } catch (...) {
         sendResponse(client,500,"application/json; charset=utf-8",safeError("An unexpected server error occurred."));
     }
@@ -807,6 +844,9 @@ int main(int argc, char** argv) {
     int port=8080;
     if (argc>1) { try { port=std::stoi(argv[1]); } catch (...) { std::cerr<<"Usage: medera.exe [port]\n"; return 2; } }
     if (port<1024||port>65535) { std::cerr<<"Choose a port between 1024 and 65535.\n"; return 2; }
+    if (const char* configuredCode=std::getenv("MEDERA_COMMISSION_CODE")) commissionAccessCode=configuredCode;
+    if (commissionAccessCode.empty())
+        std::cerr << "Warning: staff registration, sign-in, and password reset are disabled. Set MEDERA_COMMISSION_CODE before starting MedEra.\n";
     serverPort=port;
     std::array<wchar_t,32768> executablePath{};
     const DWORD executablePathLength=GetModuleFileNameW(nullptr,executablePath.data(),static_cast<DWORD>(executablePath.size()));

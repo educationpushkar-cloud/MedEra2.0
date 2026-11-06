@@ -1,5 +1,6 @@
 # MedEra
-
+Set-Location "C:\Users\kumar\OneDrive\Desktop\medera2.     0\MedEra\medera"                 
+>> .\medera-qrfix.exe 8096             
 3. Open PowerShell in the `medera` folder (the folder that contains `build.bat`), then run `.\build.bat medera-reviews.exe`.
 4. Start the corrected build from that same folder with `.\medera-reviews.exe 8097`.
 The interface is inspired by the clear location-first search and browsing pattern in the reference website. It uses original MedEra branding and CSS-built hospital illustrations.

@@ -33,4 +33,3 @@ struct Request {
 };
 
 struct Ranked { std::string id; double score = 0, distance = -1; };
-//"Define data structures for hospitals, accounts, appointments, ratings, emergencies, requests, and ranked hospitals"

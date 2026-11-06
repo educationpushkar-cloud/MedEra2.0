@@ -1,3 +1,5 @@
 /medera*.exe
+/tests/*.exe
 /data/*.db
 /data/*.tmp
+/.env
