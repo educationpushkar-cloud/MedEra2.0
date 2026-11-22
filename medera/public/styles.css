@@ -253,3 +253,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .listing-control button { flex: 0 0 auto; }
 .review-profile-link { display: inline; width: auto; margin: 0 0 0 5px; padding: 0; vertical-align: baseline; font-weight: 700; }
 @media (max-width: 520px) { .listing-control { align-items: flex-start; flex-direction: column; } }
+
+/* Keep the appointment result outside its tracking form so the review form submits independently. */
+.track-panel { min-width: 0; }
+@media (max-width: 440px) { .track-panel + .track-form { padding-top: 8px; border-top: 1px solid #e5ebe5; } }

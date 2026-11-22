@@ -339,8 +339,12 @@ function renderEmergencyTracking(emergency) {
 async function trackAppointment(code) {
   const result = $('#appointmentTrackResult');
   result.textContent = 'Checking status…'; result.classList.remove('error');
-  try { renderAppointmentTracking(await api(`/api/appointments/status?${queryString({ code })}`)); }
-  catch (error) { result.textContent = error.message; result.classList.add('error'); }
+  try {
+    const appointment = await api(`/api/appointments/status?${queryString({ code })}`);
+    renderAppointmentTracking(appointment);
+    return appointment;
+  }
+  catch (error) { result.textContent = error.message; result.classList.add('error'); return null; }
 }
 async function trackEmergency(code) {
   const result = $('#emergencyTrackResult');
@@ -647,8 +651,9 @@ $('#appointmentTrackResult').addEventListener('submit', async event => {
   try {
     await api('/api/ratings', { method: 'POST', data: { appointmentId: form.dataset.ratingCode, ...formData(form) } });
     showToast('Thanks for sharing your review.');
-    await trackAppointment(form.dataset.ratingCode);
+    const appointment = await trackAppointment(form.dataset.ratingCode);
     await loadHospitals();
+    if (appointment?.hospitalId) await openHospitalProfile(appointment.hospitalId);
   } catch (error) {
     message.textContent = error.message;
     message.classList.add('error');
