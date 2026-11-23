@@ -12,7 +12,9 @@
 std::vector<Hospital> hospitals;
 std::unordered_map<std::string, std::vector<std::string>> locationIndex;
 std::unordered_map<std::string, std::vector<std::string>> cityIndex;
-
+// Searches the global hospital list for a hospital with the given ID.
+// Returns a pointer to the hospital if found; otherwise returns nullptr.
+Hospital* hospitalById(const std::string& id)
 Hospital* hospitalById(const std::string& id) {
     for (auto& hospital : hospitals) {
         if (hospital.id == id) return &hospital;
@@ -22,7 +24,9 @@ Hospital* hospitalById(const std::string& id) {
 
 namespace {
 int failures = 0;
-
+// Prints PASS or FAIL for a test condition.
+// Increments the global failure counter when the condition is false.
+void expect(bool condition, const std::string& name)
 void expect(bool condition, const std::string& name) {
     if (condition) {
         std::cout << "PASS  " << name << '\n';
@@ -31,7 +35,10 @@ void expect(bool condition, const std::string& name) {
         ++failures;
     }
 }
-
+// Checks whether two floating-point values are equal within a tolerance.
+// Useful because decimal calculations may have small precision differences.
+void expectNear(double actual, double expected, double tolerance,
+                const std::string& name)
 void expectNear(double actual, double expected, double tolerance, const std::string& name) {
     expect(std::abs(actual - expected) <= tolerance, name);
 }
