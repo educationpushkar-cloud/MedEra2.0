@@ -42,14 +42,18 @@ void expectNear(double actual, double expected, double tolerance,
 void expectNear(double actual, double expected, double tolerance, const std::string& name) {
     expect(std::abs(actual - expected) <= tolerance, name);
 }
-
+// Converts every character in a string to lowercase.
+// Used to make city, area, and specialty searches case-insensitive.
+std::string lowercase(std::string value)
 std::string lowercase(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
         return static_cast<char>(std::tolower(ch));
     });
     return value;
 }
-
+// Creates and returns a Hospital object populated with test data.
+// Default values let tests omit rating data and listing status when unnecessary.
+Hospital makeHospital(...)
 Hospital makeHospital(std::string id, std::string city, std::string area, std::string departments,
                       int beds, int ambulances, double latitude, double longitude,
                       double ratingSum = 0, int ratingCount = 0, bool listed = true) {
@@ -69,7 +73,9 @@ Hospital makeHospital(std::string id, std::string city, std::string area, std::s
     hospital.listed = listed;
     return hospital;
 }
-
+// Rebuilds lookup indexes from the current global hospital list.
+// locationIndex uses "city|area" as its key, while cityIndex groups by city.
+void rebuildIndexes()
 void rebuildIndexes() {
     locationIndex.clear();
     cityIndex.clear();
