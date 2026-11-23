@@ -91,7 +91,11 @@ bool contains(const std::string& text, const std::string& value)
 bool contains(const std::string& text, const std::string& value) {
     return text.find(value) != std::string::npos;
 }
-
+// Extracts a simple string field from JSON.
+// Example: jsonStringField(json, "id", captchaId)
+// gets the value of {"id":"..."} and saves it in captchaId.
+bool jsonStringField(const std::string& json, const std::string& name,
+                     std::string& value)
 bool jsonStringField(const std::string& json, const std::string& name, std::string& value) {
     const std::string marker = "\"" + name + "\":\"";
     const std::size_t start = json.find(marker);
@@ -102,7 +106,9 @@ bool jsonStringField(const std::string& json, const std::string& name, std::stri
     value = json.substr(valueStart, end - valueStart);
     return true;
 }
-
+// Records and displays each test result.
+// Increments either the passed or failed counter.
+void check(const std::string& name, bool condition)
 void check(const std::string& name, bool condition) {
     if (condition) {
         std::cout << "PASS  " << name << '\n';
