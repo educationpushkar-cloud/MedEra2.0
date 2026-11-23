@@ -15,7 +15,10 @@ struct Response {
     int status = 0;
     std::string body;
 };
-
+// Sends a complete HTTP request over a socket.
+// send() may transmit only part of the data, so this loop continues
+// until every character in 'data' has been sent.
+bool sendAll(SOCKET socket, const std::string& data)
 bool sendAll(SOCKET socket, const std::string& data) {
     std::size_t sent = 0;
     while (sent < data.size()) {
@@ -26,7 +29,12 @@ bool sendAll(SOCKET socket, const std::string& data) {
     }
     return true;
 }
-
+// Connects to the local server, builds an HTTP GET/POST request,
+// sends it, receives the full response, and extracts:
+// - HTTP status code, such as 200 or 404
+// - response body, usually JSON
+Response request(const std::string& method, const std::string& path,
+                 const std::string& body = "", const std::string& origin = "")
 Response request(const std::string& method, const std::string& path,
                  const std::string& body = "", const std::string& origin = "") {
     Response response;
@@ -77,7 +85,9 @@ Response request(const std::string& method, const std::string& path,
     response.body = raw.substr(headerEnd + 4);
     return response;
 }
-
+// Checks whether 'value' occurs anywhere inside 'text'.
+// Used to check for expected JSON fields or error messages.
+bool contains(const std::string& text, const std::string& value)
 bool contains(const std::string& text, const std::string& value) {
     return text.find(value) != std::string::npos;
 }
